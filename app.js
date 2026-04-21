@@ -19,6 +19,11 @@
   let currentToken = null;
   let tokenExpiry = 0;
   let pendingTokenResolve = null;
+  // Whether the pending request was interactive (affects whether we show a
+  // failure toast — silent refreshes on page load shouldn't nag the user).
+  let lastRequestInteractive = false;
+
+  const SIGNED_IN_FLAG = "jobtrail_was_signed_in_v1";
 
   // DOM refs
   const $ = (id) => document.getElementById(id);
@@ -106,7 +111,12 @@
           pendingTokenResolve(null);
           pendingTokenResolve = null;
         }
-        toast("Sign-in cancelled or failed", { error: true });
+        // Silent refreshes on page boot often fail with "popup_closed" or
+        // "user_interaction_required" — that's fine, it just means the user
+        // needs to click Sign in again. Don't pop a scary toast.
+        if (lastRequestInteractive) {
+          toast("Sign-in cancelled or failed", { error: true });
+        }
       }
     });
     return tokenClient;
@@ -115,17 +125,37 @@
   async function requestToken(options) {
     // options.interactive = true triggers consent popup; false attempts silent refresh.
     const client = ensureTokenClient();
+    lastRequestInteractive = !!(options && options.interactive);
     return new Promise((resolve) => {
       pendingTokenResolve = resolve;
       try {
         client.requestAccessToken({
-          prompt: options && options.interactive ? "consent" : ""
+          // "" prompts silent refresh if Google still has a valid grant;
+          // "consent" forces the full chooser + consent screen.
+          prompt: lastRequestInteractive ? "consent" : ""
         });
       } catch (err) {
         pendingTokenResolve = null;
         console.warn(err);
         resolve(null);
       }
+    });
+  }
+
+  function waitForGis(timeoutMs) {
+    return new Promise((resolve) => {
+      const start = Date.now();
+      (function poll() {
+        if (window.google && google.accounts && google.accounts.oauth2) {
+          resolve(true);
+          return;
+        }
+        if (Date.now() - start > timeoutMs) {
+          resolve(false);
+          return;
+        }
+        setTimeout(poll, 80);
+      })();
     });
   }
 
@@ -429,6 +459,7 @@
         toast("Sign-in cancelled", { error: true });
         return;
       }
+      try { localStorage.setItem(SIGNED_IN_FLAG, "1"); } catch (_) {}
       showSignedIn();
       await loadFromDrive();
       renderJobs();
@@ -441,9 +472,39 @@
   }
 
   function signOut() {
+    try { localStorage.removeItem(SIGNED_IN_FLAG); } catch (_) {}
     clearToken();
     state = { jobs: [], profile: null, autofillMappings: {}, loaded: false };
     showSignedOut();
+  }
+
+  async function attemptSilentRestore() {
+    // On page load, if the user has signed in before on this device, try to
+    // get a fresh token silently. Google will honor it as long as the user
+    // hasn't revoked access and the browser still holds the consent cookie.
+    let flag;
+    try { flag = localStorage.getItem(SIGNED_IN_FLAG); } catch (_) { flag = null; }
+    if (!flag || !hasValidClientId()) return;
+
+    const ready = await waitForGis(5000);
+    if (!ready) return;
+
+    setSync("syncing", "Restoring session…");
+    const tok = await requestToken({ interactive: false });
+    if (!tok) {
+      // Silent refresh can fail (cookies cleared, consent revoked). Leave the
+      // UI in its signed-out state so the user just clicks Sign in again.
+      setSync("", "Not signed in");
+      return;
+    }
+    try {
+      showSignedIn();
+      await loadFromDrive();
+      renderJobs();
+    } catch (err) {
+      console.warn("Restore failed:", err);
+      setSync("", "Not signed in");
+    }
   }
 
   function showSignedIn() {
@@ -479,4 +540,8 @@
   if (!hasValidClientId()) {
     configWarn.hidden = false;
   }
+
+  // Try to silently pick up an existing session so refreshing the page doesn't
+  // boot the user back to the sign-in screen.
+  attemptSilentRestore();
 })();
