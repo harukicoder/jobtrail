@@ -214,10 +214,10 @@
     jobsEmpty.hidden = jobs.length !== 0;
     jobsTbody.innerHTML = jobs.map((j) => {
       const urlLink = j.url
-        ? `<a href="${escapeHtml(j.url)}" target="_blank" rel="noopener noreferrer">Open</a>`
+        ? `<a href="${escapeHtml(j.url)}" target="_blank" rel="noopener noreferrer" data-stop-row>Open</a>`
         : "";
       return `
-        <tr>
+        <tr class="job-row" data-action="edit" data-id="${escapeHtml(j.id)}" tabindex="0" role="button" aria-label="Edit ${escapeHtml(j.jobTitle || "job")}">
           <td class="job-title-cell">
             <strong>${escapeHtml(j.jobTitle || "(untitled)")}</strong>
             ${urlLink}
@@ -228,7 +228,7 @@
           <td>${escapeHtml(j.dateApplied || "")}</td>
           <td>
             <div class="row-actions">
-              <button class="ghost-button" data-action="edit" data-id="${escapeHtml(j.id)}">Edit</button>
+              <button class="primary-button" data-action="edit" data-id="${escapeHtml(j.id)}">Edit</button>
             </div>
           </td>
         </tr>
@@ -328,13 +328,27 @@
     toast("Deleted");
   });
 
+  function openJobForEdit(id) {
+    const job = state.jobs.find((j) => j.id === id);
+    if (job) openModal(job);
+  }
+
   jobsTbody.addEventListener("click", (e) => {
-    const btn = e.target.closest("button[data-action]");
-    if (!btn) return;
-    if (btn.dataset.action === "edit") {
-      const job = state.jobs.find((j) => j.id === btn.dataset.id);
-      if (job) openModal(job);
-    }
+    // Don't hijack clicks on the "Open" link inside the row — that should
+    // navigate to the job posting in a new tab, not open the edit modal.
+    if (e.target.closest("[data-stop-row]")) return;
+    const target = e.target.closest("[data-action='edit']");
+    if (!target) return;
+    openJobForEdit(target.dataset.id);
+  });
+
+  // Keyboard accessibility: Enter/Space on a focused row opens the edit modal.
+  jobsTbody.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const row = e.target.closest("tr.job-row");
+    if (!row) return;
+    e.preventDefault();
+    openJobForEdit(row.dataset.id);
   });
 
   // ---------- Search / Filter ----------

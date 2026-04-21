@@ -307,6 +307,13 @@ button, input, select, textarea {
 
 .jobs-table tbody tr:hover { background: rgba(20, 184, 166, 0.04); }
 
+/* Rows are edit-entry points — show it with cursor + focus ring. */
+.jobs-table tbody tr.job-row { cursor: pointer; }
+.jobs-table tbody tr.job-row:focus-visible {
+  outline: 2px solid var(--accent, #14b8a6);
+  outline-offset: -2px;
+}
+
 .job-title-cell strong {
   font-weight: 600;
   display: block;
