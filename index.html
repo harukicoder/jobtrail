@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JobTrail · CRM</title>
+    <link rel="stylesheet" href="app.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand-row">
+        <div class="brand-mark">J</div>
+        <div>
+          <p class="eyebrow">JobTrail</p>
+          <h1>Your job-search CRM</h1>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span class="sync-pill" id="sync-pill">Not signed in</span>
+        <button class="ghost-button" id="export-button" type="button" disabled>Export JSON</button>
+        <button class="ghost-button" id="import-button" type="button" disabled>Import JSON</button>
+        <input type="file" id="import-input" accept="application/json" hidden>
+        <button class="primary-button" id="signin-button" type="button">Sign in with Google</button>
+        <button class="ghost-button" id="signout-button" type="button" hidden>Sign out</button>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section class="signed-out-card" id="signed-out-card">
+        <h2>Sign in to load your data</h2>
+        <p>JobTrail stores a single JSON file in your Google Drive under <code>JobTrail/jobtrail-data.json</code>. We only ever see files this app creates — nothing else in your Drive.</p>
+        <p class="config-warn" id="config-warn" hidden>
+          This build has no Google Client ID configured. Copy <code>config.example.js</code> to <code>config.js</code> and set <code>googleClientId</code>. See the <a href="README.md">README</a>.
+        </p>
+      </section>
+
+      <section class="stats-row" id="stats-row" hidden>
+        <div class="stat-card"><span class="stat-number" id="stat-total">0</span><span class="stat-label">Total</span></div>
+        <div class="stat-card"><span class="stat-number" id="stat-applied">0</span><span class="stat-label">Applied</span></div>
+        <div class="stat-card"><span class="stat-number" id="stat-interviewing">0</span><span class="stat-label">Interviewing</span></div>
+        <div class="stat-card"><span class="stat-number" id="stat-offer">0</span><span class="stat-label">Offers</span></div>
+        <div class="stat-card"><span class="stat-number" id="stat-rejected">0</span><span class="stat-label">Rejected</span></div>
+      </section>
+
+      <section class="jobs-section" id="jobs-section" hidden>
+        <div class="jobs-head">
+          <h2>Jobs</h2>
+          <div class="jobs-head-actions">
+            <input type="search" id="jobs-search" placeholder="Search title, company, location…">
+            <select id="jobs-filter-status">
+              <option value="">All statuses</option>
+            </select>
+            <button class="primary-button" id="add-job-button" type="button">Add job</button>
+          </div>
+        </div>
+
+        <div class="jobs-empty" id="jobs-empty" hidden>
+          <p>No jobs yet. Add one, or save pages from the JobTrail Chrome extension — then export/import here.</p>
+        </div>
+
+        <div class="jobs-table-wrap">
+          <table class="jobs-table">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Company</th>
+                <th>Location</th>
+                <th>Status</th>
+                <th>Applied</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="jobs-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <div class="modal" id="job-modal" hidden>
+      <div class="modal-scrim" data-close-modal></div>
+      <div class="modal-body" role="dialog" aria-modal="true">
+        <div class="modal-head">
+          <h3 id="job-modal-title">Add job</h3>
+          <button class="icon-button" type="button" data-close-modal aria-label="Close">×</button>
+        </div>
+        <form id="job-form" class="job-form">
+          <input type="hidden" id="field-id">
+          <div class="form-grid">
+            <label><span>Job title</span><input id="field-jobTitle" type="text" required></label>
+            <label><span>Company</span><input id="field-company" type="text" required></label>
+            <label><span>Location</span><input id="field-location" type="text"></label>
+            <label><span>Work mode</span>
+              <select id="field-workMode">
+                <option value="">—</option>
+                <option>On-site</option>
+                <option>Hybrid</option>
+                <option>Remote</option>
+              </select>
+            </label>
+            <label><span>Type</span>
+              <select id="field-jobType">
+                <option value="">—</option>
+                <option>Full-time</option>
+                <option>Part-time</option>
+                <option>Contract</option>
+                <option>Internship</option>
+                <option>Temporary</option>
+                <option>Freelance</option>
+              </select>
+            </label>
+            <label><span>Status</span><select id="field-status"></select></label>
+            <label><span>Salary</span><input id="field-salary" type="text"></label>
+            <label><span>Date applied</span><input id="field-dateApplied" type="date"></label>
+            <label class="span-2"><span>Job URL</span><input id="field-url" type="url"></label>
+            <label class="span-2"><span>Notes</span><textarea id="field-notes" rows="3"></textarea></label>
+          </div>
+          <div class="modal-actions">
+            <button class="ghost-button" type="button" id="job-delete-button" hidden>Delete</button>
+            <div class="spacer"></div>
+            <button class="ghost-button" type="button" data-close-modal>Cancel</button>
+            <button class="primary-button" type="submit">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+
+    <!-- Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+    <!-- User config (Client ID). Falls back to example if missing. -->
+    <script src="config.js" onerror="document.getElementById('config-warn').hidden = false;"></script>
+
+    <!-- Shared libs -->
+    <script src="../shared/data.js"></script>
+    <script src="../shared/drive-sync.js"></script>
+
+    <!-- Webapp entrypoint -->
+    <script src="app.js"></script>
+  </body>
+</html>
