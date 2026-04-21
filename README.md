@@ -40,27 +40,31 @@ window.JOBTRAIL_CONFIG = {
 
 ## 3. Deploy to GitHub Pages
 
-Option A — serve from repo root:
+The `webapp/` folder is self-contained — `data.js` and `drive-sync.js` now live inside it, so you can push just this folder as the root of a GitHub repo.
 
-1. Push this repo to GitHub.
-2. Repo → **Settings → Pages** → Source: `main` branch, folder: `/ (root)`.
+Option A — dedicated repo (recommended, what the "Open CRM" button expects):
+
+1. Create a new GitHub repo (e.g. `jobtrail`).
+2. Copy everything inside `webapp/` to the repo root (so `index.html`, `app.js`, `data.js`, `drive-sync.js`, `config.js`, etc. sit at the top level).
+3. Push, then enable **Settings → Pages** → Source: `main` / `/ (root)`.
+4. Visit `https://<your-username>.github.io/<repo>/`.
+
+Option B — keep the full extension repo and serve the subfolder:
+
+1. Push the whole `Codex_CRM` repo.
+2. **Settings → Pages** → Source: `main` / `/ (root)`.
 3. Visit `https://<your-username>.github.io/<repo>/webapp/`.
-
-Option B — serve the `webapp/` folder as a subtree (preferred):
-
-1. Create a new repo (e.g. `jobtrail-web`) containing just the files under `webapp/` plus the `shared/` folder (`app.js` references `../shared/...`).
-2. Enable Pages on that repo.
 
 Make sure the URL you visit matches the **Authorized JavaScript origin** you set in step 1.
 
 ## 4. Local development
 
-The webapp references `../shared/data.js` and `../shared/drive-sync.js` with relative paths, so run a static server from the **repo root**:
+All scripts the webapp needs sit next to `index.html`, so you can serve the folder directly:
 
 ```bash
-cd /path/to/Codex_CRM
+cd /path/to/Codex_CRM/webapp
 python3 -m http.server 8000
-# open http://localhost:8000/webapp/
+# open http://localhost:8000/
 ```
 
 Add `http://localhost:8000` to the authorized origins in the Cloud Console, or create a separate "localhost" OAuth client.
