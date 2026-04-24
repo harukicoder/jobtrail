@@ -34,6 +34,7 @@
   const importBtn = $("import-button");
   const importInput = $("import-input");
   const installBtn = $("install-button");
+  const profileBtn = $("profile-button");
   const signedOutCard = $("signed-out-card");
   const statsRow = $("stats-row");
   const viewTabs = $("view-tabs");
@@ -254,12 +255,15 @@
         : "";
       const hasPrep = data.hasInterviewPrepContent && data.hasInterviewPrepContent(j.interviewPrep);
       const prepBadge = hasPrep ? '<span class="jd-badge" title="Interview prep saved">🎤</span>' : "";
+      const letterBadge = (j.aiCoverLetter && j.aiCoverLetter.text)
+        ? '<span class="jd-badge" title="AI cover letter cached">✉️</span>' : "";
       return `
         <tr class="job-row" data-action="edit" data-id="${escapeHtml(j.id)}" tabindex="0" role="button" aria-label="Edit ${escapeHtml(j.jobTitle || "job")}">
           <td class="job-title-cell">
             <strong>${escapeHtml(j.jobTitle || "(untitled)")}</strong>
             ${j.description ? '<span class="jd-badge" title="Job description archived">📄</span>' : ""}
             ${prepBadge}
+            ${letterBadge}
             ${urlLink}
           </td>
           <td>${escapeHtml(j.company || "")}</td>
@@ -484,6 +488,15 @@
     const hasPrep = data.hasInterviewPrepContent && data.hasInterviewPrepContent(prep);
     if (prepBody) prepBody.hidden = !hasPrep;
     if (prepToggle) prepToggle.textContent = hasPrep ? "Hide" : "Add prep";
+
+    // AI cover letter block: preload cached letter if present; auto-expand so
+    // users can see it without hunting for a toggle when one already exists.
+    const aiBody = document.getElementById("ai-cover-body");
+    const aiToggle = document.getElementById("ai-cover-toggle");
+    const hasCachedLetter = Boolean(base && base.aiCoverLetter && base.aiCoverLetter.text);
+    if (aiBody) aiBody.hidden = !hasCachedLetter;
+    if (aiToggle) aiToggle.textContent = hasCachedLetter ? "Hide" : "Show";
+    loadCachedCoverLetterIntoModal(base);
 
     jobModal.hidden = false;
     setTimeout(() => $("field-jobTitle").focus(), 10);
@@ -756,6 +769,7 @@
     if (viewTabs) viewTabs.hidden = false;
     signInBtn.hidden = true;
     signOutBtn.hidden = false;
+    if (profileBtn) profileBtn.hidden = false;
     exportBtn.disabled = false;
     importBtn.disabled = false;
     setView(currentView);
@@ -769,6 +783,7 @@
     jobsSection.hidden = true;
     signInBtn.hidden = false;
     signOutBtn.hidden = true;
+    if (profileBtn) profileBtn.hidden = true;
     exportBtn.disabled = true;
     importBtn.disabled = true;
     setSync("", "Not signed in");
@@ -790,6 +805,345 @@
   // Try to silently pick up an existing session so refreshing the page doesn't
   // boot the user back to the sign-in screen.
   attemptSilentRestore();
+
+  // ---------- Profile drawer (classification + AI settings) ----------
+
+  const profileModal = $("profile-modal");
+  const profileForm = $("profile-form");
+  const sectionTabs = $("section-tabs");
+
+  // The section the profile editor is currently showing. Not necessarily the
+  // profile's activeSectionId until the user hits Save.
+  let editingSectionId = null;
+
+  const COMMON_PROFILE_INPUTS = [
+    "firstName", "lastName", "email", "phone",
+    "city", "country", "linkedinUrl", "githubUrl", "portfolioUrl"
+  ];
+  const SECTION_PROFILE_INPUTS = [
+    "yearsExperience", "desiredSalary", "workAuthorization",
+    "noticePeriod", "preferredStartDate", "resumeText", "coverLetter"
+  ];
+
+  function ensureProfileLoaded() {
+    if (!state.profile) {
+      // sanitizeProfile fills in defaults including all three sections.
+      state.profile = data.sanitizeProfile({});
+    }
+    return state.profile;
+  }
+
+  function renderSectionTabs() {
+    const p = ensureProfileLoaded();
+    if (!editingSectionId) editingSectionId = p.activeSectionId;
+    sectionTabs.innerHTML = (p.sections || []).map((s) => `
+      <button type="button"
+              class="section-tab ${s.id === editingSectionId ? "is-active" : ""} ${s.id === p.activeSectionId ? "is-current" : ""}"
+              data-section-id="${escapeHtml(s.id)}">
+        ${escapeHtml(s.name)}${s.id === p.activeSectionId ? ' <span class="section-tab-badge">active</span>' : ""}
+      </button>
+    `).join("") + `
+      <button type="button" class="section-set-active" id="section-set-active-btn" ${editingSectionId === p.activeSectionId ? "hidden" : ""}>
+        Use this section
+      </button>
+    `;
+  }
+
+  function readProfileFormIntoState() {
+    const p = ensureProfileLoaded();
+    COMMON_PROFILE_INPUTS.forEach((key) => {
+      p[key] = ($("profile-" + key).value || "").trim();
+    });
+    // fullName is derived; re-compute on save so it stays consistent.
+    p.fullName = [p.firstName, p.lastName].filter(Boolean).join(" ").trim();
+
+    const section = p.sections.find((s) => s.id === editingSectionId) || p.sections[0];
+    SECTION_PROFILE_INPUTS.forEach((key) => {
+      section[key] = ($("profile-" + key).value || "").trim();
+    });
+
+    p.ai = data.sanitizeAiSettings({
+      provider: $("profile-ai-provider").value,
+      apiKey: $("profile-ai-apiKey").value,
+      model: $("profile-ai-model").value
+    });
+  }
+
+  function writeSectionFieldsFromState() {
+    const p = ensureProfileLoaded();
+    const section = p.sections.find((s) => s.id === editingSectionId) || p.sections[0];
+    SECTION_PROFILE_INPUTS.forEach((key) => {
+      $("profile-" + key).value = section[key] || "";
+    });
+  }
+
+  function openProfileModal() {
+    const p = ensureProfileLoaded();
+    editingSectionId = p.activeSectionId;
+
+    COMMON_PROFILE_INPUTS.forEach((key) => {
+      $("profile-" + key).value = p[key] || "";
+    });
+    writeSectionFieldsFromState();
+
+    const ai = p.ai || { provider: "none", apiKey: "", model: "" };
+    $("profile-ai-provider").value = ai.provider || "none";
+    $("profile-ai-apiKey").value = ai.apiKey || "";
+    $("profile-ai-model").value = ai.model || (data.AI_DEFAULT_MODEL[ai.provider] || "");
+
+    renderSectionTabs();
+    profileModal.hidden = false;
+  }
+
+  function closeProfileModal() {
+    profileModal.hidden = true;
+  }
+
+  if (profileBtn) profileBtn.addEventListener("click", openProfileModal);
+  if (profileModal) {
+    profileModal.addEventListener("click", (e) => {
+      if (e.target && e.target.matches("[data-close-profile]")) closeProfileModal();
+    });
+  }
+
+  if (sectionTabs) {
+    sectionTabs.addEventListener("click", (e) => {
+      const setActiveBtn = e.target.closest("#section-set-active-btn");
+      if (setActiveBtn) {
+        // Promote the section currently being edited to activeSectionId.
+        // Persists on form Save, so the badge flips immediately for visual
+        // feedback but the Drive write happens with the rest of the profile.
+        const p = ensureProfileLoaded();
+        p.activeSectionId = editingSectionId;
+        renderSectionTabs();
+        return;
+      }
+      const tab = e.target.closest(".section-tab");
+      if (!tab) return;
+      // Save the currently-edited section's fields before switching, so
+      // typing into Full-time and then clicking Part-time doesn't lose work.
+      readProfileFormIntoState();
+      editingSectionId = tab.dataset.sectionId;
+      writeSectionFieldsFromState();
+      renderSectionTabs();
+    });
+  }
+
+  // Default the AI model when the user changes provider.
+  const aiProviderEl = $("profile-ai-provider");
+  if (aiProviderEl) {
+    aiProviderEl.addEventListener("change", () => {
+      const provider = aiProviderEl.value;
+      const defaultModel = data.AI_DEFAULT_MODEL[provider] || "";
+      // Only overwrite if the user hasn't set a custom one for this provider.
+      const current = ($("profile-ai-model").value || "").trim();
+      const anyDefault = Object.values(data.AI_DEFAULT_MODEL).includes(current);
+      if (!current || anyDefault) $("profile-ai-model").value = defaultModel;
+    });
+  }
+
+  if (profileForm) {
+    profileForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      readProfileFormIntoState();
+      state.profile = data.sanitizeProfile(state.profile);
+      closeProfileModal();
+      await saveToDrive();
+      toast("Profile saved");
+    });
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !profileModal.hidden) closeProfileModal();
+  });
+
+  // ---------- AI cover letter (inside the job modal) ----------
+
+  const aiCoverBody = $("ai-cover-body");
+  const aiCoverToggle = $("ai-cover-toggle");
+  const aiCoverText = $("ai-cover-text");
+  const aiCoverGenBtn = $("ai-cover-generate");
+  const aiCoverCopyBtn = $("ai-cover-copy");
+  const aiCoverStatus = $("ai-cover-status");
+  const aiCoverHint = $("ai-cover-hint");
+
+  function setAiStatus(label) {
+    if (aiCoverStatus) aiCoverStatus.textContent = label || "";
+  }
+
+  function currentJobFromForm() {
+    const id = $("field-id").value;
+    if (!id) return null;
+    return state.jobs.find((j) => j.id === id) || null;
+  }
+
+  function collectCoverLetterInputs() {
+    const p = ensureProfileLoaded();
+    const section = (p.sections || []).find((s) => s.id === p.activeSectionId) || (p.sections || [])[0] || {};
+    const cv = (section.resumeText || "").trim();
+    const role = ($("field-jobTitle").value || "").trim();
+    const company = ($("field-company").value || "").trim();
+    const jd = ($("field-description") ? $("field-description").value : "").trim();
+    return { cv, role, company, jd, section, profile: p };
+  }
+
+  function loadCachedCoverLetterIntoModal(job) {
+    // When opening a job, if we have a cached letter whose input hash still
+    // matches the current CV + description + role + company, show it instead
+    // of regenerating. Cheap and keeps the user's edits intact across opens.
+    if (!aiCoverText) return;
+    aiCoverText.value = "";
+    setAiStatus("");
+    if (!job || !job.aiCoverLetter) return;
+
+    const inputs = collectCoverLetterInputs();
+    const freshHash = data.hashCoverLetterInputs({
+      cv: inputs.cv, jd: inputs.jd, role: inputs.role, company: inputs.company
+    });
+
+    aiCoverText.value = job.aiCoverLetter.text || "";
+    if (job.aiCoverLetter.inputsHash === freshHash) {
+      setAiStatus(`Cached · ${job.aiCoverLetter.model || job.aiCoverLetter.provider || "AI"}`);
+    } else {
+      setAiStatus("Cached · inputs changed");
+    }
+  }
+
+  if (aiCoverToggle) {
+    aiCoverToggle.addEventListener("click", () => {
+      if (!aiCoverBody) return;
+      const willShow = aiCoverBody.hidden;
+      aiCoverBody.hidden = !willShow;
+      aiCoverToggle.textContent = willShow ? "Hide" : "Show";
+      if (willShow && aiCoverText && !aiCoverText.value) {
+        const job = currentJobFromForm();
+        if (job) loadCachedCoverLetterIntoModal(job);
+      }
+    });
+  }
+
+  if (aiCoverCopyBtn) {
+    aiCoverCopyBtn.addEventListener("click", async () => {
+      if (!aiCoverText || !aiCoverText.value.trim()) return;
+      try {
+        await navigator.clipboard.writeText(aiCoverText.value);
+        toast("Cover letter copied");
+      } catch (_) {
+        aiCoverText.select();
+        document.execCommand("copy");
+        toast("Cover letter copied");
+      }
+    });
+  }
+
+  const AI_SYSTEM_PROMPT =
+    "You write short, professional cover letters. Output only the letter body, "
+    + "max 220 words, 3 short paragraphs, no headings, no markdown, no preamble. "
+    + "Never invent experience not in the CV. Be specific about why this role at "
+    + "this company fits the candidate's background.";
+
+  function buildCoverLetterPrompt(inputs) {
+    const jd = (inputs.jd || "").slice(0, 3000);
+    const cv = (inputs.cv || "").slice(0, 3000);
+    return [
+      `Write a 3-paragraph cover letter (max 220 words).`,
+      `Company: ${inputs.company || "(unspecified)"}`,
+      `Role: ${inputs.role || "(unspecified)"}`,
+      ``,
+      `JOB DESCRIPTION:`,
+      jd || "(none provided)",
+      ``,
+      `CANDIDATE CV:`,
+      cv || "(none provided)",
+      ``,
+      `Letter:`
+    ].join("\n");
+  }
+
+  async function generateCoverLetterForCurrentJob() {
+    if (!window.JobTrailAI) {
+      toast("AI module not loaded", { error: true });
+      return;
+    }
+    const inputs = collectCoverLetterInputs();
+    const p = ensureProfileLoaded();
+    const ai = p.ai || { provider: "none" };
+
+    if (ai.provider === "none" || !ai.apiKey) {
+      toast("Set an AI provider + API key in Profile first.", { error: true });
+      openProfileModal();
+      return;
+    }
+    if (!inputs.cv) {
+      toast("Add a CV to your active section in Profile first.", { error: true });
+      openProfileModal();
+      return;
+    }
+    if (!inputs.role && !inputs.company) {
+      toast("Add a job title and company before generating.", { error: true });
+      return;
+    }
+
+    const job = currentJobFromForm();
+    const inputsHash = data.hashCoverLetterInputs({
+      cv: inputs.cv, jd: inputs.jd, role: inputs.role, company: inputs.company
+    });
+
+    // Cache hit: skip the network call entirely.
+    if (job && job.aiCoverLetter && job.aiCoverLetter.inputsHash === inputsHash && job.aiCoverLetter.text) {
+      aiCoverText.value = job.aiCoverLetter.text;
+      setAiStatus(`Cached · ${job.aiCoverLetter.model || job.aiCoverLetter.provider}`);
+      toast("Loaded cached letter");
+      return;
+    }
+
+    aiCoverGenBtn.disabled = true;
+    const originalLabel = aiCoverGenBtn.textContent;
+    aiCoverGenBtn.textContent = "Generating…";
+    setAiStatus(`Calling ${ai.provider}…`);
+    aiCoverText.value = "";
+
+    const prompt = buildCoverLetterPrompt(inputs);
+    try {
+      const finalText = await window.JobTrailAI.generate({
+        provider: ai.provider,
+        apiKey: ai.apiKey,
+        model: ai.model,
+        system: AI_SYSTEM_PROMPT,
+        user: prompt,
+        onChunk: (partial) => { aiCoverText.value = partial; }
+      });
+      const trimmed = (finalText || aiCoverText.value || "").trim();
+      aiCoverText.value = trimmed;
+      setAiStatus(`Generated · ${ai.model || ai.provider}`);
+
+      // Persist onto the job record so it syncs via Drive and re-opens instantly.
+      if (trimmed && job) {
+        const updated = Object.assign({}, job, {
+          aiCoverLetter: {
+            text: trimmed,
+            model: ai.model || "",
+            provider: ai.provider,
+            inputsHash,
+            generatedAt: new Date().toISOString()
+          }
+        });
+        const sanitized = data.sanitizeJob(updated);
+        state.jobs = state.jobs.map((j) => (j.id === sanitized.id ? sanitized : j));
+        await saveToDrive();
+        renderJobs();
+      }
+    } catch (err) {
+      console.error(err);
+      setAiStatus("");
+      toast("AI generation failed: " + (err && err.message ? err.message : "unknown"), { error: true });
+    } finally {
+      aiCoverGenBtn.disabled = false;
+      aiCoverGenBtn.textContent = originalLabel;
+    }
+  }
+
+  if (aiCoverGenBtn) aiCoverGenBtn.addEventListener("click", generateCoverLetterForCurrentJob);
 
   // ---------- PWA: service worker + install prompt ----------
 

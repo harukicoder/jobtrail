@@ -243,6 +243,67 @@
     return new Date().toISOString().slice(0, 10);
   }
 
+  // AI-generated cover letter cached per-job. We invalidate when any of the
+  // inputs change (CV, job description, role, or company) via a hash so users
+  // don't pay the generation cost twice for the same inputs — see fxHashInputs.
+  function sanitizeAiCoverLetter(input) {
+    if (!input || typeof input !== "object") return null;
+    const text = String(input.text || "").slice(0, 8000);
+    if (!text) return null;
+    return {
+      text,
+      model: String(input.model || "").slice(0, 80),
+      provider: String(input.provider || "").slice(0, 40),
+      inputsHash: String(input.inputsHash || "").slice(0, 32),
+      generatedAt: String(input.generatedAt || new Date().toISOString()).slice(0, 30)
+    };
+  }
+
+  // Small deterministic hash (djb2 + hex). Not crypto-grade — we just need a
+  // fingerprint so cache hits/misses are correct across runs on the same data.
+  function fxHash(str) {
+    let h = 5381;
+    const s = String(str || "");
+    for (let i = 0; i < s.length; i++) {
+      h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+    }
+    return h.toString(16);
+  }
+
+  function hashCoverLetterInputs(parts) {
+    const p = parts || {};
+    return fxHash([
+      (p.cv || "").trim(),
+      (p.jd || "").trim(),
+      (p.role || "").trim(),
+      (p.company || "").trim()
+    ].join("\u0001"));
+  }
+
+  // Profile-level AI settings (BYOK). Kept on the profile so it syncs through
+  // Drive. The API key is sensitive — the webapp only sends it directly from
+  // the browser to the model provider; we never proxy through any third party.
+  const AI_PROVIDERS = ["none", "anthropic", "openai", "gemini", "on-device"];
+  const AI_DEFAULT_MODEL = {
+    anthropic: "claude-sonnet-4-5",
+    openai: "gpt-4o-mini",
+    gemini: "gemini-1.5-flash-latest",
+    "on-device": "",
+    none: ""
+  };
+
+  function sanitizeAiSettings(input) {
+    const src = input && typeof input === "object" ? input : {};
+    const provider = AI_PROVIDERS.indexOf(String(src.provider || "")) >= 0
+      ? src.provider
+      : "none";
+    return {
+      provider,
+      apiKey: String(src.apiKey || "").slice(0, 512),
+      model: String(src.model || AI_DEFAULT_MODEL[provider] || "").slice(0, 80)
+    };
+  }
+
   function sanitizeInterviewPrep(input) {
     // Structured per-job interview prep. Keep fields flat so legacy records
     // without the field sanitize into safe empty strings on read.
@@ -278,6 +339,7 @@
     // Cached description — truncated so a huge listing can't blow storage quotas.
     const description = String(input.description || "").slice(0, 8000);
     const interviewPrep = sanitizeInterviewPrep(input.interviewPrep);
+    const aiCoverLetter = sanitizeAiCoverLetter(input.aiCoverLetter);
     // Tombstone: when non-null, the job is a "this was deleted" marker that
     // we keep around so the deletion propagates through Drive sync. We filter
     // these out of UI reads (getAllJobs) and purge them after 30 days.
@@ -302,6 +364,7 @@
       url,
       normalizedUrl,
       interviewPrep,
+      aiCoverLetter,
       createdAt: input.createdAt || now,
       updatedAt: now,
       deletedAt
@@ -723,6 +786,8 @@
       ? requestedActive
       : sections[0].id;
 
+    profile.ai = sanitizeAiSettings(source.ai);
+
     return profile;
   }
 
@@ -884,6 +949,11 @@
     countAutofillMappings,
     countByStatus,
     hasInterviewPrepContent,
+    hashCoverLetterInputs,
+    AI_PROVIDERS,
+    AI_DEFAULT_MODEL,
+    sanitizeAiSettings,
+    sanitizeAiCoverLetter,
     deleteJob,
     descriptorKeyFor,
     extractDomain,

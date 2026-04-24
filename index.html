@@ -22,6 +22,7 @@
       </div>
       <div class="header-actions">
         <span class="sync-pill" id="sync-pill">Not signed in</span>
+        <button class="ghost-button" id="profile-button" type="button" hidden>Profile</button>
         <button class="ghost-button" id="install-button" type="button" hidden>Install app</button>
         <button class="ghost-button" id="export-button" type="button" disabled>Export JSON</button>
         <button class="ghost-button" id="import-button" type="button" disabled>Import JSON</button>
@@ -155,6 +156,24 @@
 
             <div class="span-2 prep-block">
               <div class="prep-head">
+                <span class="prep-title">✉️ AI cover letter</span>
+                <div class="prep-head-actions">
+                  <span class="ai-status" id="ai-cover-status"></span>
+                  <button type="button" class="ghost-link" id="ai-cover-toggle">Show</button>
+                </div>
+              </div>
+              <div class="prep-body" id="ai-cover-body" hidden>
+                <div class="ai-cover-actions">
+                  <button type="button" class="primary-button" id="ai-cover-generate">Generate with AI</button>
+                  <button type="button" class="ghost-button" id="ai-cover-copy">Copy</button>
+                  <span class="ai-cover-hint" id="ai-cover-hint">Uses your active section's CV + this job's description. Configure provider in Profile.</span>
+                </div>
+                <textarea id="ai-cover-text" rows="10" placeholder="Letter will appear here once generated. You can also paste / edit manually."></textarea>
+              </div>
+            </div>
+
+            <div class="span-2 prep-block">
+              <div class="prep-head">
                 <span class="prep-title">🎤 Interview prep</span>
                 <button type="button" class="ghost-link" id="field-prep-toggle">Show</button>
               </div>
@@ -192,6 +211,84 @@
       </div>
     </div>
 
+    <div class="modal" id="profile-modal" hidden>
+      <div class="modal-scrim" data-close-profile></div>
+      <div class="modal-body modal-body-wide" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
+        <div class="modal-head">
+          <h3 id="profile-modal-title">Profile</h3>
+          <button class="icon-button" type="button" data-close-profile aria-label="Close">×</button>
+        </div>
+        <p class="modal-sub">Saved to your Drive file. The active section is used by AI cover letters and autofill.</p>
+
+        <form id="profile-form" class="profile-form">
+          <fieldset class="profile-group">
+            <legend>Basics</legend>
+            <div class="form-grid">
+              <label><span>First name</span><input id="profile-firstName" type="text"></label>
+              <label><span>Last name</span><input id="profile-lastName" type="text"></label>
+              <label><span>Email</span><input id="profile-email" type="email"></label>
+              <label><span>Phone</span><input id="profile-phone" type="tel"></label>
+              <label><span>City</span><input id="profile-city" type="text"></label>
+              <label><span>Country</span><input id="profile-country" type="text"></label>
+              <label class="span-2"><span>LinkedIn URL</span><input id="profile-linkedinUrl" type="url"></label>
+              <label><span>GitHub URL</span><input id="profile-githubUrl" type="url"></label>
+              <label><span>Portfolio URL</span><input id="profile-portfolioUrl" type="url"></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="profile-group">
+            <legend>Section</legend>
+            <p class="modal-sub">Switch between Full-time / Part-time / Self-employed. Each keeps its own CV, cover-letter template, and preferences — the active one is what AI and autofill pull from.</p>
+            <div class="section-tabs" id="section-tabs"></div>
+            <div class="form-grid">
+              <label><span>Years of experience</span><input id="profile-yearsExperience" type="text"></label>
+              <label><span>Desired salary</span><input id="profile-desiredSalary" type="text"></label>
+              <label><span>Work authorization</span><input id="profile-workAuthorization" type="text"></label>
+              <label><span>Notice period</span><input id="profile-noticePeriod" type="text"></label>
+              <label><span>Preferred start date</span><input id="profile-preferredStartDate" type="date"></label>
+              <label class="span-2"><span>CV / resume (plain text)</span>
+                <textarea id="profile-resumeText" rows="10" placeholder="Paste your CV here. Used by AI cover-letter generation and autofill."></textarea>
+              </label>
+              <label class="span-2"><span>Cover-letter template</span>
+                <textarea id="profile-coverLetter" rows="6" placeholder="Dear {company} hiring team,&#10;&#10;I'm excited to apply for the {role} role. ...&#10;&#10;Placeholders: {company}, {role}, {jobTitle}, {location}"></textarea>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="profile-group">
+            <legend>AI cover letter</legend>
+            <p class="modal-sub">Bring-your-own-key: your request goes directly from this browser to the provider. Nothing is proxied. Leave provider as <strong>None</strong> to disable AI in the webapp.</p>
+            <div class="form-grid">
+              <label><span>Provider</span>
+                <select id="profile-ai-provider">
+                  <option value="none">None (disabled)</option>
+                  <option value="anthropic">Anthropic (Claude)</option>
+                  <option value="openai">OpenAI (GPT)</option>
+                  <option value="gemini">Google Gemini</option>
+                </select>
+              </label>
+              <label><span>Model</span><input id="profile-ai-model" type="text" placeholder="e.g. claude-sonnet-4-5"></label>
+              <label class="span-2"><span>API key</span>
+                <input id="profile-ai-apiKey" type="password" autocomplete="off" placeholder="sk-… / sk-ant-… / AIza…">
+              </label>
+            </div>
+            <p class="ai-key-hint">
+              Anthropic keys:
+              <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">console.anthropic.com</a>
+              · OpenAI: <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">platform.openai.com</a>
+              · Gemini: <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com</a>
+            </p>
+          </fieldset>
+
+          <div class="modal-actions">
+            <div class="spacer"></div>
+            <button class="ghost-button" type="button" data-close-profile>Cancel</button>
+            <button class="primary-button" type="submit">Save profile</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <div class="toast" id="toast" hidden></div>
 
     <!-- Google Identity Services -->
@@ -203,6 +300,7 @@
     <!-- Shared libs -->
     <script src="data.js"></script>
     <script src="drive-sync.js"></script>
+    <script src="ai.js"></script>
 
     <!-- Webapp entrypoint -->
     <script src="app.js"></script>

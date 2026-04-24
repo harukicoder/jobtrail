@@ -6,12 +6,14 @@
 // strategy so users always get the latest deploy when online and still see a
 // working UI offline.
 
-const CACHE_NAME = "jobtrail-shell-v1";
+// Bump this whenever the shell changes so browsers drop the old cache.
+const CACHE_NAME = "jobtrail-shell-v2";
 const SHELL_URLS = [
   "./",
   "./index.html",
   "./app.css",
   "./app.js",
+  "./ai.js",
   "./data.js",
   "./drive-sync.js",
   "./manifest.webmanifest",

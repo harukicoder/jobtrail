@@ -755,6 +755,184 @@ button, input, select, textarea {
   .prep-grid .span-2 { grid-column: span 1; }
 }
 
+/* ---------- Profile drawer ---------- */
+
+.modal-body-wide {
+  width: min(780px, calc(100vw - 32px));
+}
+
+.modal-sub {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.profile-form { display: grid; gap: 18px; }
+
+.profile-group {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin: 0;
+  background: #fbfdfd;
+}
+.profile-group legend {
+  padding: 0 8px;
+  margin-left: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--teal-800);
+}
+.profile-group .form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+}
+.profile-group .form-grid label { display: grid; gap: 4px; }
+.profile-group .form-grid .span-2 { grid-column: span 2; }
+.profile-group .form-grid span {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.profile-group .form-grid input,
+.profile-group .form-grid select,
+.profile-group .form-grid textarea {
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: #fff;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.profile-group .form-grid input:focus,
+.profile-group .form-grid select:focus,
+.profile-group .form-grid textarea:focus {
+  border-color: var(--teal-500);
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.15);
+}
+.profile-group .form-grid textarea { resize: vertical; }
+
+@media (max-width: 620px) {
+  .profile-group .form-grid { grid-template-columns: 1fr; }
+  .profile-group .form-grid .span-2 { grid-column: span 1; }
+}
+
+.section-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+.section-tab {
+  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-soft);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+.section-tab:hover { background: var(--teal-50); border-color: var(--teal-500); }
+.section-tab.is-active {
+  background: var(--teal-700);
+  color: #fff;
+  border-color: var(--teal-700);
+}
+.section-tab-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+}
+.section-tab.is-current:not(.is-active) .section-tab-badge {
+  background: var(--teal-100);
+  color: var(--teal-800);
+}
+
+.section-set-active {
+  background: transparent;
+  border: 1px dashed var(--teal-500);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--teal-800);
+  cursor: pointer;
+}
+.section-set-active:hover { background: var(--teal-50); }
+.section-set-active[hidden] { display: none; }
+
+.ai-key-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ai-key-hint a { color: var(--teal-700); text-decoration: none; }
+.ai-key-hint a:hover { text-decoration: underline; }
+
+/* ---------- AI cover letter (inside job modal) ---------- */
+
+.prep-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ai-status {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ai-cover-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.ai-cover-hint {
+  flex: 1 1 auto;
+  min-width: 180px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+#ai-cover-text {
+  width: 100%;
+  padding: 11px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  outline: none;
+  resize: vertical;
+  min-height: 160px;
+}
+#ai-cover-text:focus {
+  border-color: var(--teal-500);
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.15);
+}
+
 .toast {
   position: fixed;
   bottom: 20px;
