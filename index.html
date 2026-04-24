@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JobTrail · CRM</title>
+    <meta name="theme-color" content="#0d7a74">
+    <meta name="description" content="JobTrail — your personal job-search CRM backed by Google Drive.">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icon.svg">
     <link rel="stylesheet" href="app.css">
   </head>
   <body>
@@ -17,6 +22,7 @@
       </div>
       <div class="header-actions">
         <span class="sync-pill" id="sync-pill">Not signed in</span>
+        <button class="ghost-button" id="install-button" type="button" hidden>Install app</button>
         <button class="ghost-button" id="export-button" type="button" disabled>Export JSON</button>
         <button class="ghost-button" id="import-button" type="button" disabled>Import JSON</button>
         <input type="file" id="import-input" accept="application/json" hidden>
@@ -40,6 +46,30 @@
         <div class="stat-card"><span class="stat-number" id="stat-interviewing">0</span><span class="stat-label">Interviewing</span></div>
         <div class="stat-card"><span class="stat-number" id="stat-offer">0</span><span class="stat-label">Offers</span></div>
         <div class="stat-card"><span class="stat-number" id="stat-rejected">0</span><span class="stat-label">Rejected</span></div>
+      </section>
+
+      <nav class="view-tabs" id="view-tabs" hidden>
+        <button type="button" class="view-tab is-active" data-view="pipeline">Pipeline</button>
+        <button type="button" class="view-tab" data-view="funnel">Funnel analytics</button>
+      </nav>
+
+      <section class="funnel-section" id="funnel-section" hidden>
+        <div class="funnel-head">
+          <h2>Funnel</h2>
+          <p class="funnel-sub">How your applications progress from bookmark to offer. Counts include jobs that have reached at least that stage.</p>
+        </div>
+        <div class="funnel-bars" id="funnel-bars"></div>
+        <div class="funnel-conversions" id="funnel-conversions"></div>
+        <div class="funnel-side">
+          <div class="funnel-side-card">
+            <h3>Outcomes</h3>
+            <ul id="funnel-outcomes"></ul>
+          </div>
+          <div class="funnel-side-card">
+            <h3>Upcoming interviews</h3>
+            <ul id="funnel-upcoming"><li class="muted">None scheduled.</li></ul>
+          </div>
+        </div>
       </section>
 
       <section class="jobs-section" id="jobs-section" hidden>
@@ -122,6 +152,35 @@
               <textarea id="field-description" rows="10" placeholder="Full job post text. Auto-captured by the extension — kept so you can re-read it after the posting is taken down." hidden></textarea>
               <span class="description-empty-hint" id="field-description-empty" hidden>No description archived yet. Paste one here, or re-save this job via the Chrome extension to auto-capture it.</span>
             </label>
+
+            <div class="span-2 prep-block">
+              <div class="prep-head">
+                <span class="prep-title">🎤 Interview prep</span>
+                <button type="button" class="ghost-link" id="field-prep-toggle">Show</button>
+              </div>
+              <div class="prep-body" id="field-prep-body" hidden>
+                <div class="prep-grid">
+                  <label><span>Next round</span>
+                    <input id="field-prep-nextRound" type="text" placeholder="e.g. Tech screen, Onsite loop, System design">
+                  </label>
+                  <label><span>Scheduled at</span>
+                    <input id="field-prep-scheduledAt" type="datetime-local">
+                  </label>
+                  <label class="span-2"><span>Interviewers</span>
+                    <input id="field-prep-interviewers" type="text" placeholder="Names, roles — e.g. Ana (EM), Luis (staff eng)">
+                  </label>
+                  <label class="span-2"><span>Questions to ask them</span>
+                    <textarea id="field-prep-questionsToAsk" rows="4" placeholder="One per line. What does success look like in 90 days? Why is this role open? …"></textarea>
+                  </label>
+                  <label class="span-2"><span>STAR stories</span>
+                    <textarea id="field-prep-starStories" rows="6" placeholder="Situation · Task · Action · Result. Keep 3–5 bullets per story so you can recall under pressure."></textarea>
+                  </label>
+                  <label class="span-2"><span>Other notes</span>
+                    <textarea id="field-prep-notes" rows="3" placeholder="Research on the company, product notes, links to read before the call."></textarea>
+                  </label>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="modal-actions">
             <button class="ghost-button" type="button" id="job-delete-button" hidden>Delete</button>

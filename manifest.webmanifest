@@ -1,0 +1,25 @@
+{
+  "name": "JobTrail CRM",
+  "short_name": "JobTrail",
+  "description": "Your job-search CRM, backed by Google Drive.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f6f8f7",
+  "theme_color": "#0d7a74",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

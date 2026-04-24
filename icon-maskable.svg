@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="JobTrail icon (maskable)">
+  <!-- Maskable: keep the glyph inside the 80% safe zone so Android launchers
+       can trim the edges without cropping the letter. -->
+  <rect width="512" height="512" fill="#0d7a74"/>
+  <text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle"
+        font-family="-apple-system, BlinkMacSystemFont, Inter, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
+        font-weight="800" font-size="220" fill="#ffffff">J</text>
+</svg>

@@ -243,6 +243,30 @@
     return new Date().toISOString().slice(0, 10);
   }
 
+  function sanitizeInterviewPrep(input) {
+    // Structured per-job interview prep. Keep fields flat so legacy records
+    // without the field sanitize into safe empty strings on read.
+    const src = input && typeof input === "object" ? input : {};
+    const trim = (v, cap) => String(v || "").slice(0, cap).trim();
+    const clamp = (v, cap) => String(v || "").slice(0, cap);
+    return {
+      nextRound: trim(src.nextRound, 120),
+      scheduledAt: trim(src.scheduledAt, 30),   // ISO / datetime-local value
+      interviewers: trim(src.interviewers, 500),
+      questionsToAsk: clamp(src.questionsToAsk, 4000),
+      starStories: clamp(src.starStories, 6000),
+      notes: clamp(src.notes, 4000)
+    };
+  }
+
+  function hasInterviewPrepContent(prep) {
+    if (!prep) return false;
+    return Boolean(
+      prep.nextRound || prep.scheduledAt || prep.interviewers
+      || prep.questionsToAsk || prep.starStories || prep.notes
+    );
+  }
+
   function sanitizeJob(input) {
     const now = new Date().toISOString();
     const url = input.url ? String(input.url).trim() : "";
@@ -253,6 +277,7 @@
     const status = STATUS_META[input.status] ? input.status : "bookmarked";
     // Cached description — truncated so a huge listing can't blow storage quotas.
     const description = String(input.description || "").slice(0, 8000);
+    const interviewPrep = sanitizeInterviewPrep(input.interviewPrep);
     // Tombstone: when non-null, the job is a "this was deleted" marker that
     // we keep around so the deletion propagates through Drive sync. We filter
     // these out of UI reads (getAllJobs) and purge them after 30 days.
@@ -276,6 +301,7 @@
       externalJobId,
       url,
       normalizedUrl,
+      interviewPrep,
       createdAt: input.createdAt || now,
       updatedAt: now,
       deletedAt
@@ -857,6 +883,7 @@
     clearAutofillMappings,
     countAutofillMappings,
     countByStatus,
+    hasInterviewPrepContent,
     deleteJob,
     descriptorKeyFor,
     extractDomain,

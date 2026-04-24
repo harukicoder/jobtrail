@@ -33,8 +33,11 @@
   const exportBtn = $("export-button");
   const importBtn = $("import-button");
   const importInput = $("import-input");
+  const installBtn = $("install-button");
   const signedOutCard = $("signed-out-card");
   const statsRow = $("stats-row");
+  const viewTabs = $("view-tabs");
+  const funnelSection = $("funnel-section");
   const jobsSection = $("jobs-section");
   const jobsEmpty = $("jobs-empty");
   const jobsTbody = $("jobs-tbody");
@@ -47,6 +50,9 @@
   const jobDeleteBtn = $("job-delete-button");
   const toastEl = $("toast");
   const configWarn = $("config-warn");
+
+  // Which top-level view is visible: "pipeline" (jobs table) or "funnel".
+  let currentView = "pipeline";
 
   // ---------- Utilities ----------
 
@@ -246,11 +252,14 @@
       const urlLink = j.url
         ? `<a href="${escapeHtml(j.url)}" target="_blank" rel="noopener noreferrer" data-stop-row>Open</a>`
         : "";
+      const hasPrep = data.hasInterviewPrepContent && data.hasInterviewPrepContent(j.interviewPrep);
+      const prepBadge = hasPrep ? '<span class="jd-badge" title="Interview prep saved">🎤</span>' : "";
       return `
         <tr class="job-row" data-action="edit" data-id="${escapeHtml(j.id)}" tabindex="0" role="button" aria-label="Edit ${escapeHtml(j.jobTitle || "job")}">
           <td class="job-title-cell">
             <strong>${escapeHtml(j.jobTitle || "(untitled)")}</strong>
             ${j.description ? '<span class="jd-badge" title="Job description archived">📄</span>' : ""}
+            ${prepBadge}
             ${urlLink}
           </td>
           <td>${escapeHtml(j.company || "")}</td>
@@ -267,6 +276,162 @@
       `;
     }).join("");
     recomputeStats();
+    renderFunnel();
+  }
+
+  // ---------- Funnel analytics ----------
+
+  // Ordered pipeline: each stage includes everyone who has reached at least
+  // that stage. "Rejected" collapses to a side-bucket because we don't know
+  // where in the flow the rejection happened from the current status alone.
+  const FUNNEL_STAGES = [
+    { id: "bookmarked",   label: "Bookmarked",    includes: ["bookmarked", "applying", "applied", "interviewing", "offer"] },
+    { id: "applying",     label: "Applying",      includes: ["applying", "applied", "interviewing", "offer"] },
+    { id: "applied",      label: "Applied",       includes: ["applied", "interviewing", "offer"] },
+    { id: "interviewing", label: "Interviewing",  includes: ["interviewing", "offer"] },
+    { id: "offer",        label: "Offer",         includes: ["offer"] }
+  ];
+
+  function countAtOrPast(jobs, stageIds) {
+    const set = new Set(stageIds);
+    return jobs.filter((j) => set.has(j.status)).length;
+  }
+
+  function pct(n, d) {
+    if (!d) return 0;
+    return Math.round((n / d) * 100);
+  }
+
+  function formatScheduledAt(value) {
+    if (!value) return "";
+    // datetime-local values look like "2026-05-01T14:30" (no tz). Parse as local.
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return escapeHtml(value);
+    return d.toLocaleString(undefined, {
+      weekday: "short", month: "short", day: "numeric",
+      hour: "numeric", minute: "2-digit"
+    });
+  }
+
+  function renderFunnel() {
+    if (!funnelSection || funnelSection.hidden) return;
+    const live = liveJobs();
+    const total = live.length;
+
+    // Active pipeline = anything not rejected/archived. That's the funnel's
+    // denominator: jobs that could still progress. Rejected/archived are
+    // shown on the side so the main bars stay clean.
+    const active = live.filter((j) => j.status !== "rejected" && j.status !== "archived");
+    const rejected = live.filter((j) => j.status === "rejected").length;
+    const archived = live.filter((j) => j.status === "archived").length;
+
+    // Bars — widths are relative to the top stage, not total (so the shape
+    // actually looks like a funnel).
+    const stageCounts = FUNNEL_STAGES.map((stage) => ({
+      id: stage.id,
+      label: stage.label,
+      count: countAtOrPast(active, stage.includes)
+    }));
+    const topCount = stageCounts[0].count || 0;
+
+    $("funnel-bars").innerHTML = stageCounts.map((s) => {
+      const width = topCount ? Math.max(4, Math.round((s.count / topCount) * 100)) : 4;
+      const pctOfTop = topCount ? pct(s.count, topCount) : 0;
+      return `
+        <div class="funnel-row">
+          <div class="funnel-row-label">${escapeHtml(s.label)}</div>
+          <div class="funnel-bar-wrap">
+            <div class="funnel-bar" style="width:${width}%"></div>
+            <div class="funnel-bar-value">${s.count}<span class="funnel-bar-pct"> · ${pctOfTop}%</span></div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    // Stage-to-stage conversion rates — the interesting numbers.
+    const conv = [];
+    for (let i = 0; i < stageCounts.length - 1; i++) {
+      const from = stageCounts[i];
+      const to = stageCounts[i + 1];
+      conv.push({
+        label: `${from.label} → ${to.label}`,
+        rate: pct(to.count, from.count),
+        from: from.count,
+        to: to.count
+      });
+    }
+    $("funnel-conversions").innerHTML = conv.map((c) => `
+      <div class="conv-card">
+        <div class="conv-rate">${c.rate}%</div>
+        <div class="conv-label">${escapeHtml(c.label)}</div>
+        <div class="conv-frac">${c.to} of ${c.from}</div>
+      </div>
+    `).join("");
+
+    // Outcomes side card.
+    const outcomes = [
+      { label: "In pipeline", n: active.length, color: "var(--teal-700)" },
+      { label: "Offers",      n: stageCounts[4].count, color: "#3e956a" },
+      { label: "Rejected",    n: rejected, color: "#9e5c63" },
+      { label: "Archived",    n: archived, color: "#6b7280" },
+      { label: "Total ever",  n: total, color: "var(--text)" }
+    ];
+    $("funnel-outcomes").innerHTML = outcomes.map((o) => `
+      <li><span class="dot" style="background:${o.color}"></span>${escapeHtml(o.label)}<b>${o.n}</b></li>
+    `).join("");
+
+    // Upcoming interviews — pull from per-job interviewPrep.scheduledAt.
+    const now = Date.now();
+    const upcoming = live
+      .filter((j) => j.interviewPrep && j.interviewPrep.scheduledAt)
+      .map((j) => {
+        const when = new Date(j.interviewPrep.scheduledAt).getTime();
+        return { job: j, when };
+      })
+      .filter((x) => Number.isFinite(x.when) && x.when >= now - 1000 * 60 * 60 * 6) // include recent past 6h
+      .sort((a, b) => a.when - b.when)
+      .slice(0, 8);
+    const upcomingEl = $("funnel-upcoming");
+    if (!upcoming.length) {
+      upcomingEl.innerHTML = '<li class="muted">None scheduled.</li>';
+    } else {
+      upcomingEl.innerHTML = upcoming.map(({ job }) => `
+        <li>
+          <button type="button" class="upcoming-link" data-action="edit" data-id="${escapeHtml(job.id)}">
+            <span class="upcoming-when">${formatScheduledAt(job.interviewPrep.scheduledAt)}</span>
+            <span class="upcoming-title">${escapeHtml(job.jobTitle || "(untitled)")}</span>
+            <span class="upcoming-company">${escapeHtml(job.company || "")}${
+              job.interviewPrep.nextRound ? " · " + escapeHtml(job.interviewPrep.nextRound) : ""
+            }</span>
+          </button>
+        </li>
+      `).join("");
+    }
+  }
+
+  // ---------- View switching ----------
+
+  function setView(view) {
+    currentView = view === "funnel" ? "funnel" : "pipeline";
+    document.querySelectorAll(".view-tab").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.dataset.view === currentView);
+    });
+    if (currentView === "funnel") {
+      jobsSection.hidden = true;
+      funnelSection.hidden = false;
+      renderFunnel();
+    } else {
+      funnelSection.hidden = true;
+      jobsSection.hidden = false;
+    }
+  }
+
+  if (viewTabs) {
+    viewTabs.addEventListener("click", (e) => {
+      const btn = e.target.closest(".view-tab");
+      if (!btn) return;
+      setView(btn.dataset.view);
+    });
   }
 
   function populateStatusSelects() {
@@ -304,6 +469,22 @@
       const emptyHint = $("field-description-empty");
       if (emptyHint) emptyHint.hidden = Boolean(descEl.value);
     }
+
+    // Interview prep block. Auto-expand when there's existing content so the
+    // user sees it without hunting for the toggle; keep collapsed for empty.
+    const prep = (base && base.interviewPrep) || {};
+    $("field-prep-nextRound").value = prep.nextRound || "";
+    $("field-prep-scheduledAt").value = prep.scheduledAt || "";
+    $("field-prep-interviewers").value = prep.interviewers || "";
+    $("field-prep-questionsToAsk").value = prep.questionsToAsk || "";
+    $("field-prep-starStories").value = prep.starStories || "";
+    $("field-prep-notes").value = prep.notes || "";
+    const prepBody = $("field-prep-body");
+    const prepToggle = $("field-prep-toggle");
+    const hasPrep = data.hasInterviewPrepContent && data.hasInterviewPrepContent(prep);
+    if (prepBody) prepBody.hidden = !hasPrep;
+    if (prepToggle) prepToggle.textContent = hasPrep ? "Hide" : "Add prep";
+
     jobModal.hidden = false;
     setTimeout(() => $("field-jobTitle").focus(), 10);
   }
@@ -336,6 +517,21 @@
     });
   }
 
+  const prepToggleBtn = $("field-prep-toggle");
+  if (prepToggleBtn) {
+    prepToggleBtn.addEventListener("click", () => {
+      const prepBody = $("field-prep-body");
+      if (!prepBody) return;
+      const willShow = prepBody.hidden;
+      prepBody.hidden = !willShow;
+      prepToggleBtn.textContent = willShow ? "Hide" : "Add prep";
+      if (willShow) {
+        const firstInput = prepBody.querySelector("input, textarea");
+        if (firstInput) firstInput.focus();
+      }
+    });
+  }
+
   jobForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const payload = {
@@ -350,7 +546,15 @@
       dateApplied: $("field-dateApplied").value,
       url: $("field-url").value.trim(),
       notes: $("field-notes").value.trim(),
-      description: $("field-description") ? $("field-description").value : ""
+      description: $("field-description") ? $("field-description").value : "",
+      interviewPrep: {
+        nextRound: $("field-prep-nextRound").value,
+        scheduledAt: $("field-prep-scheduledAt").value,
+        interviewers: $("field-prep-interviewers").value,
+        questionsToAsk: $("field-prep-questionsToAsk").value,
+        starStories: $("field-prep-starStories").value,
+        notes: $("field-prep-notes").value
+      }
     };
 
     const existing = payload.id && state.jobs.find((j) => j.id === payload.id);
@@ -401,6 +605,15 @@
     if (!target) return;
     openJobForEdit(target.dataset.id);
   });
+
+  // Clicking an upcoming-interview entry jumps into that job's edit modal.
+  if (funnelSection) {
+    funnelSection.addEventListener("click", (e) => {
+      const target = e.target.closest("[data-action='edit']");
+      if (!target || !target.dataset.id) return;
+      openJobForEdit(target.dataset.id);
+    });
+  }
 
   // Keyboard accessibility: Enter/Space on a focused row opens the edit modal.
   jobsTbody.addEventListener("keydown", (e) => {
@@ -540,16 +753,19 @@
   function showSignedIn() {
     signedOutCard.hidden = true;
     statsRow.hidden = false;
-    jobsSection.hidden = false;
+    if (viewTabs) viewTabs.hidden = false;
     signInBtn.hidden = true;
     signOutBtn.hidden = false;
     exportBtn.disabled = false;
     importBtn.disabled = false;
+    setView(currentView);
   }
 
   function showSignedOut() {
     signedOutCard.hidden = false;
     statsRow.hidden = true;
+    if (viewTabs) viewTabs.hidden = true;
+    funnelSection.hidden = true;
     jobsSection.hidden = true;
     signInBtn.hidden = false;
     signOutBtn.hidden = true;
@@ -574,4 +790,50 @@
   // Try to silently pick up an existing session so refreshing the page doesn't
   // boot the user back to the sign-in screen.
   attemptSilentRestore();
+
+  // ---------- PWA: service worker + install prompt ----------
+
+  // Register the service worker so the shell works offline and the page is
+  // installable. Only on secure contexts (https / localhost) — file:// loads
+  // don't support SWs. Failures are silent; the app still works without one.
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch((err) => {
+        console.warn("Service worker registration failed:", err);
+      });
+    });
+  }
+
+  // `beforeinstallprompt` fires on Chrome/Edge when the app passes install
+  // criteria. We stash the event and surface our own button — the browser's
+  // native prompt only fires once per user gesture, so we drive it ourselves.
+  let deferredInstallPrompt = null;
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    if (installBtn) installBtn.hidden = false;
+  });
+
+  if (installBtn) {
+    installBtn.addEventListener("click", async () => {
+      if (!deferredInstallPrompt) return;
+      installBtn.disabled = true;
+      try {
+        deferredInstallPrompt.prompt();
+        const choice = await deferredInstallPrompt.userChoice;
+        if (choice && choice.outcome === "accepted") {
+          toast("Installing JobTrail…");
+        }
+      } catch (_) { /* user dismissed */ }
+      deferredInstallPrompt = null;
+      installBtn.hidden = true;
+      installBtn.disabled = false;
+    });
+  }
+
+  window.addEventListener("appinstalled", () => {
+    if (installBtn) installBtn.hidden = true;
+    deferredInstallPrompt = null;
+    toast("Installed — launch JobTrail from your home screen");
+  });
 })();
