@@ -1111,7 +1111,13 @@
         model: ai.model,
         system: AI_SYSTEM_PROMPT,
         user: prompt,
-        onChunk: (partial) => { aiCoverText.value = partial; }
+        onChunk: (partial) => {
+          // Stream tokens straight into the textarea. Keep the caret / scroll
+          // pinned to the bottom so long letters stay visible as they write
+          // themselves — matches the feel of chat UIs.
+          aiCoverText.value = partial;
+          aiCoverText.scrollTop = aiCoverText.scrollHeight;
+        }
       });
       const trimmed = (finalText || aiCoverText.value || "").trim();
       aiCoverText.value = trimmed;

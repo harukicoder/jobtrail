@@ -14,6 +14,9 @@
   const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
   const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
   const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
+  // DeepSeek exposes an OpenAI-compatible chat/completions endpoint, so we
+  // reuse the exact same SSE parsing path as OpenAI — only URL + model differ.
+  const DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions";
 
   function joinStreamSSE(textAcc, newText) {
     return textAcc + newText;
@@ -114,6 +117,37 @@
     }, onChunk);
   }
 
+  async function generateDeepSeek(opts) {
+    // DeepSeek's API is a drop-in for OpenAI's chat/completions, including the
+    // SSE stream frame shape (`choices[0].delta.content`). We keep a separate
+    // function rather than reusing generateOpenAI so the error prefix makes
+    // failures easy to attribute in logs.
+    const { system, user, apiKey, model, onChunk } = opts;
+    const res = await fetch(DEEPSEEK_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: model || "deepseek-chat",
+        stream: true,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user }
+        ]
+      })
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`DeepSeek ${res.status}: ${txt.slice(0, 300) || res.statusText}`);
+    }
+    return readEventStream(res, (event) => {
+      const choice = event && event.choices && event.choices[0];
+      return choice && choice.delta && choice.delta.content ? choice.delta.content : null;
+    }, onChunk);
+  }
+
   async function generateGemini(opts) {
     // Gemini's streaming SSE uses a different frame format and the v1beta
     // endpoint expects the key as a query param. Using non-streaming here
@@ -147,6 +181,7 @@
     if (provider === "anthropic") return generateAnthropic(opts);
     if (provider === "openai") return generateOpenAI(opts);
     if (provider === "gemini") return generateGemini(opts);
+    if (provider === "deepseek") return generateDeepSeek(opts);
     throw new Error(`Unsupported provider: ${provider}`);
   }
 

@@ -283,11 +283,12 @@
   // Profile-level AI settings (BYOK). Kept on the profile so it syncs through
   // Drive. The API key is sensitive — the webapp only sends it directly from
   // the browser to the model provider; we never proxy through any third party.
-  const AI_PROVIDERS = ["none", "anthropic", "openai", "gemini", "on-device"];
+  const AI_PROVIDERS = ["none", "anthropic", "openai", "gemini", "deepseek", "on-device"];
   const AI_DEFAULT_MODEL = {
     anthropic: "claude-sonnet-4-5",
     openai: "gpt-4o-mini",
     gemini: "gemini-1.5-flash-latest",
+    deepseek: "deepseek-chat",
     "on-device": "",
     none: ""
   };
