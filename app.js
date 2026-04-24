@@ -250,10 +250,12 @@
         <tr class="job-row" data-action="edit" data-id="${escapeHtml(j.id)}" tabindex="0" role="button" aria-label="Edit ${escapeHtml(j.jobTitle || "job")}">
           <td class="job-title-cell">
             <strong>${escapeHtml(j.jobTitle || "(untitled)")}</strong>
+            ${j.description ? '<span class="jd-badge" title="Job description archived">📄</span>' : ""}
             ${urlLink}
           </td>
           <td>${escapeHtml(j.company || "")}</td>
           <td>${escapeHtml(j.location || "")}</td>
+          <td>${j.workMode ? escapeHtml(j.workMode) : '<span class="cell-muted">—</span>'}</td>
           <td>${statusChip(j.status)}</td>
           <td>${escapeHtml(j.dateApplied || "")}</td>
           <td>
@@ -293,6 +295,15 @@
     $("field-dateApplied").value = base.dateApplied || "";
     $("field-url").value = base.url || "";
     $("field-notes").value = base.notes || "";
+    const descEl = $("field-description");
+    if (descEl) {
+      descEl.value = base.description || "";
+      descEl.hidden = true;
+      const toggleBtn = $("field-description-toggle");
+      if (toggleBtn) toggleBtn.textContent = descEl.value ? "Show" : "Add";
+      const emptyHint = $("field-description-empty");
+      if (emptyHint) emptyHint.hidden = Boolean(descEl.value);
+    }
     jobModal.hidden = false;
     setTimeout(() => $("field-jobTitle").focus(), 10);
   }
@@ -307,6 +318,24 @@
     if (e.key === "Escape" && !jobModal.hidden) closeModal();
   });
 
+  // Collapsible archived-JD inside the edit modal. Keeps the modal compact by
+  // default; tapping "Show" expands the full text for re-reading or editing.
+  const descriptionToggle = $("field-description-toggle");
+  if (descriptionToggle) {
+    descriptionToggle.addEventListener("click", () => {
+      const descEl = $("field-description");
+      const emptyHint = $("field-description-empty");
+      if (!descEl) return;
+      const willShow = descEl.hidden;
+      descEl.hidden = !willShow;
+      if (emptyHint) emptyHint.hidden = !willShow || Boolean(descEl.value);
+      descriptionToggle.textContent = willShow
+        ? "Hide"
+        : (descEl.value ? "Show" : "Add");
+      if (willShow) descEl.focus();
+    });
+  }
+
   jobForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const payload = {
@@ -320,7 +349,8 @@
       salary: $("field-salary").value.trim(),
       dateApplied: $("field-dateApplied").value,
       url: $("field-url").value.trim(),
-      notes: $("field-notes").value.trim()
+      notes: $("field-notes").value.trim(),
+      description: $("field-description") ? $("field-description").value : ""
     };
 
     const existing = payload.id && state.jobs.find((j) => j.id === payload.id);

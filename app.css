@@ -314,6 +314,50 @@ button, input, select, textarea {
   outline-offset: -2px;
 }
 
+.cell-muted { color: var(--muted, #94a3b8); }
+
+.jd-badge {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 12px;
+  opacity: 0.75;
+  vertical-align: middle;
+  cursor: default;
+}
+
+/* Collapsible archived-JD section in the edit modal */
+.description-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ghost-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent, #14b8a6);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.ghost-link:hover { text-decoration: underline; }
+.description-empty-hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted, #94a3b8);
+  font-size: 12px;
+  font-style: italic;
+}
+#field-description {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .job-title-cell strong {
   font-weight: 600;
   display: block;

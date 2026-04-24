@@ -65,6 +65,7 @@
                 <th>Title</th>
                 <th>Company</th>
                 <th>Location</th>
+                <th>Work mode</th>
                 <th>Status</th>
                 <th>Applied</th>
                 <th></th>
@@ -113,6 +114,14 @@
             <label><span>Date applied</span><input id="field-dateApplied" type="date"></label>
             <label class="span-2"><span>Job URL</span><input id="field-url" type="url"></label>
             <label class="span-2"><span>Notes</span><textarea id="field-notes" rows="3"></textarea></label>
+            <label class="span-2">
+              <span class="description-label-row">
+                Job description (archived)
+                <button type="button" class="ghost-link" id="field-description-toggle">Show</button>
+              </span>
+              <textarea id="field-description" rows="10" placeholder="Full job post text. Auto-captured by the extension — kept so you can re-read it after the posting is taken down." hidden></textarea>
+              <span class="description-empty-hint" id="field-description-empty" hidden>No description archived yet. Paste one here, or re-save this job via the Chrome extension to auto-capture it.</span>
+            </label>
           </div>
           <div class="modal-actions">
             <button class="ghost-button" type="button" id="job-delete-button" hidden>Delete</button>
