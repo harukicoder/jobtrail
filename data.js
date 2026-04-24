@@ -888,6 +888,47 @@
     await storageSet(FALLBACK_STORAGE_AREA, { [AUTOFILL_MAPPINGS_KEY]: {} });
   }
 
+  // Normalize a form question for dedupe: drop trailing required markers, punctuation.
+  function normalizeCustomAnswerQuestion(q) {
+    return String(q || "")
+      .replace(/\*+\s*$/, "")
+      .replace(/\s*\(?\s*required\s*\)?\s*$/i, "")
+      .replace(/[\s:：?？]+$/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+  }
+
+  // Append a captured question→answer pair to the active section's customAnswers.
+  // De-dupes against existing answers (case-insensitive, punctuation-insensitive).
+  // Returns { added: true|false, reason? } so callers can show feedback.
+  async function captureCustomAnswer(question, answer) {
+    const q = String(question || "").trim();
+    const a = String(answer || "").trim();
+    if (!q || !a) return { added: false, reason: "empty" };
+    if (q.length < 4) return { added: false, reason: "too-short" };
+    // Sanity cap so we don't persist essay answers or runaway HTML payloads.
+    if (a.length > 2000) return { added: false, reason: "too-long" };
+
+    const profile = await getProfile();
+    const section = findActiveSection(profile);
+    if (!section) return { added: false, reason: "no-section" };
+
+    const norm = normalizeCustomAnswerQuestion(q);
+    const existing = Array.isArray(section.customAnswers) ? section.customAnswers : [];
+    const dup = existing.some((entry) => normalizeCustomAnswerQuestion(entry.question) === norm);
+    if (dup) return { added: false, reason: "duplicate" };
+
+    section.customAnswers = sanitizeCustomAnswers(existing.concat([{
+      id: "qa_" + Math.random().toString(36).slice(2, 10),
+      question: q.slice(0, 200),
+      answer: a.slice(0, 2000)
+    }]));
+
+    await saveProfile(profile);
+    return { added: true };
+  }
+
   async function countAutofillMappings() {
     const all = await getAutofillMappings();
     let total = 0;
@@ -976,6 +1017,8 @@
     replaceAllJobs,
     restoreSnapshot,
     sanitizeCustomAnswers,
+    captureCustomAnswer,
+    normalizeCustomAnswerQuestion,
     sanitizeJob,
     sanitizeProfile,
     saveAutofillMapping,
