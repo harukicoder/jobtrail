@@ -280,6 +280,40 @@
     ].join("\u0001"));
   }
 
+  // AI-generated fit analysis cached per-job. Compares the active section's CV
+  // against the job description and returns a 0–100 score + strengths/missing
+  // keyword lists. Cached on the job so it syncs through Drive; invalidated
+  // when CV or JD changes via the inputsHash fingerprint.
+  function sanitizeAiFitAnalysis(input) {
+    if (!input || typeof input !== "object") return null;
+    const score = Number(input.score);
+    if (!Number.isFinite(score)) return null;
+    const clamped = Math.max(0, Math.min(100, Math.round(score)));
+    const strList = (arr) => (Array.isArray(arr) ? arr : [])
+      .map((s) => String(s || "").trim())
+      .filter(Boolean)
+      .slice(0, 8)
+      .map((s) => s.slice(0, 120));
+    return {
+      score: clamped,
+      strengths: strList(input.strengths),
+      missing: strList(input.missing),
+      summary: String(input.summary || "").slice(0, 500),
+      model: String(input.model || "").slice(0, 80),
+      provider: String(input.provider || "").slice(0, 40),
+      inputsHash: String(input.inputsHash || "").slice(0, 32),
+      generatedAt: String(input.generatedAt || new Date().toISOString()).slice(0, 30)
+    };
+  }
+
+  function hashFitInputs(parts) {
+    const p = parts || {};
+    return fxHash([
+      (p.cv || "").trim(),
+      (p.jd || "").trim()
+    ].join(""));
+  }
+
   // Profile-level AI settings (BYOK). Kept on the profile so it syncs through
   // Drive. The API key is sensitive — the webapp only sends it directly from
   // the browser to the model provider; we never proxy through any third party.
@@ -341,6 +375,7 @@
     const description = String(input.description || "").slice(0, 8000);
     const interviewPrep = sanitizeInterviewPrep(input.interviewPrep);
     const aiCoverLetter = sanitizeAiCoverLetter(input.aiCoverLetter);
+    const aiFitAnalysis = sanitizeAiFitAnalysis(input.aiFitAnalysis);
     // Tombstone: when non-null, the job is a "this was deleted" marker that
     // we keep around so the deletion propagates through Drive sync. We filter
     // these out of UI reads (getAllJobs) and purge them after 30 days.
@@ -366,6 +401,7 @@
       normalizedUrl,
       interviewPrep,
       aiCoverLetter,
+      aiFitAnalysis,
       createdAt: input.createdAt || now,
       updatedAt: now,
       deletedAt
@@ -705,10 +741,19 @@
         const question = String(entry.question || "").trim();
         const answer = String(entry.answer || "").trim();
         if (!question || !answer) return null;
+        // `source` distinguishes manually-typed answers from those auto-captured
+        // during autofill — used by the saved-answers UI to flag and let the
+        // user confirm/edit captured rows. `capturedAt` is ISO when source=captured.
+        const source = entry.source === "captured" ? "captured" : "manual";
+        const capturedAt = source === "captured"
+          ? String(entry.capturedAt || new Date().toISOString()).slice(0, 30)
+          : "";
         return {
           id: String(entry.id || ("qa_" + Math.random().toString(36).slice(2, 10))),
-          question,
-          answer
+          question: question.slice(0, 200),
+          answer: answer.slice(0, 2000),
+          source,
+          capturedAt
         };
       })
       .filter(Boolean);
@@ -922,7 +967,9 @@
     section.customAnswers = sanitizeCustomAnswers(existing.concat([{
       id: "qa_" + Math.random().toString(36).slice(2, 10),
       question: q.slice(0, 200),
-      answer: a.slice(0, 2000)
+      answer: a.slice(0, 2000),
+      source: "captured",
+      capturedAt: new Date().toISOString()
     }]));
 
     await saveProfile(profile);
@@ -996,6 +1043,8 @@
     AI_DEFAULT_MODEL,
     sanitizeAiSettings,
     sanitizeAiCoverLetter,
+    sanitizeAiFitAnalysis,
+    hashFitInputs,
     deleteJob,
     descriptorKeyFor,
     extractDomain,

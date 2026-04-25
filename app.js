@@ -257,6 +257,9 @@
       const prepBadge = hasPrep ? '<span class="jd-badge" title="Interview prep saved">🎤</span>' : "";
       const letterBadge = (j.aiCoverLetter && j.aiCoverLetter.text)
         ? '<span class="jd-badge" title="AI cover letter cached">✉️</span>' : "";
+      const fitBadge = (j.aiFitAnalysis && typeof j.aiFitAnalysis.score === "number")
+        ? `<span class="fit-pill" style="--fit-color:${fitScoreColor(j.aiFitAnalysis.score)}" title="CV ↔ JD fit score">${j.aiFitAnalysis.score}</span>`
+        : "";
       return `
         <tr class="job-row" data-action="edit" data-id="${escapeHtml(j.id)}" tabindex="0" role="button" aria-label="Edit ${escapeHtml(j.jobTitle || "job")}">
           <td class="job-title-cell">
@@ -264,6 +267,7 @@
             ${j.description ? '<span class="jd-badge" title="Job description archived">📄</span>' : ""}
             ${prepBadge}
             ${letterBadge}
+            ${fitBadge}
             ${urlLink}
           </td>
           <td>${escapeHtml(j.company || "")}</td>
@@ -497,6 +501,14 @@
     if (aiBody) aiBody.hidden = !hasCachedLetter;
     if (aiToggle) aiToggle.textContent = hasCachedLetter ? "Hide" : "Show";
     loadCachedCoverLetterIntoModal(base);
+
+    // Fit analysis: preload cached score and auto-expand when one exists.
+    const fitBody = document.getElementById("ai-fit-body");
+    const fitToggle = document.getElementById("ai-fit-toggle");
+    const hasCachedFit = Boolean(base && base.aiFitAnalysis);
+    if (fitBody) fitBody.hidden = !hasCachedFit;
+    if (fitToggle) fitToggle.textContent = hasCachedFit ? "Hide" : "Show";
+    loadCachedFitIntoModal(base);
 
     jobModal.hidden = false;
     setTimeout(() => $("field-jobTitle").focus(), 10);
@@ -875,6 +887,125 @@
     SECTION_PROFILE_INPUTS.forEach((key) => {
       $("profile-" + key).value = section[key] || "";
     });
+    renderSavedAnswers();
+  }
+
+  // ---------- Saved answers (per-section custom Q&A library) ----------
+  //
+  // The list is the same shape as the extension dashboard's. The webapp adds:
+  //   • search filter (helps once captures pile up)
+  //   • a "captured" badge on auto-saved rows so the user can audit them
+  // Edits/adds/deletes mutate state.profile in place; the parent profile
+  // form's submit handler persists everything to Drive in one write.
+  const qaListEl = $("qa-list");
+  const qaSearchEl = $("qa-search");
+  const qaAddBtn = $("qa-add");
+  const qaEmptyHint = $("qa-empty-hint");
+  let qaSearchTerm = "";
+
+  function getEditingSection() {
+    const p = ensureProfileLoaded();
+    return p.sections.find((s) => s.id === editingSectionId) || p.sections[0];
+  }
+
+  function fmtCapturedAt(iso) {
+    if (!iso) return "";
+    const t = new Date(iso).getTime();
+    if (!Number.isFinite(t)) return "";
+    const days = Math.round((Date.now() - t) / (24 * 3600 * 1000));
+    if (days <= 0) return "today";
+    if (days === 1) return "yesterday";
+    if (days < 30) return `${days}d ago`;
+    if (days < 365) return `${Math.round(days / 30)}mo ago`;
+    return `${Math.round(days / 365)}y ago`;
+  }
+
+  function renderSavedAnswers() {
+    if (!qaListEl) return;
+    const section = getEditingSection();
+    if (!section) {
+      qaListEl.innerHTML = "";
+      if (qaEmptyHint) qaEmptyHint.hidden = false;
+      return;
+    }
+    if (!Array.isArray(section.customAnswers)) section.customAnswers = [];
+    const all = section.customAnswers;
+    const term = qaSearchTerm.trim().toLowerCase();
+    const visible = term
+      ? all.filter((qa) =>
+          qa.question.toLowerCase().includes(term) ||
+          qa.answer.toLowerCase().includes(term))
+      : all;
+
+    if (qaEmptyHint) qaEmptyHint.hidden = all.length > 0;
+
+    qaListEl.innerHTML = visible.map((qa) => `
+      <div class="qa-row" data-qa-id="${escapeHtml(qa.id)}">
+        <div class="qa-row-fields">
+          <div class="qa-row-meta">
+            ${qa.source === "captured"
+              ? `<span class="qa-tag qa-tag-captured" title="Auto-captured during autofill ${escapeHtml(fmtCapturedAt(qa.capturedAt))}">captured · ${escapeHtml(fmtCapturedAt(qa.capturedAt))}</span>`
+              : '<span class="qa-tag qa-tag-manual">manual</span>'}
+          </div>
+          <input type="text" class="qa-question" placeholder="Form question" value="${escapeHtml(qa.question)}">
+          <textarea class="qa-answer" rows="2" placeholder="Your answer">${escapeHtml(qa.answer)}</textarea>
+        </div>
+        <button type="button" class="qa-row-remove" aria-label="Remove answer">Remove</button>
+      </div>
+    `).join("") || (term
+      ? '<div class="qa-empty">No answers match your search.</div>'
+      : "");
+
+    qaListEl.querySelectorAll(".qa-row").forEach((row) => {
+      const id = row.dataset.qaId;
+      const qa = section.customAnswers.find((item) => item.id === id);
+      if (!qa) return;
+      const qInput = row.querySelector(".qa-question");
+      const aInput = row.querySelector(".qa-answer");
+      const removeBtn = row.querySelector(".qa-row-remove");
+      // Editing a captured answer promotes it to manual (the user's curating
+      // it now), so it stops surfacing the auto-captured pill on next render.
+      const promoteOnEdit = () => {
+        if (qa.source === "captured") {
+          qa.source = "manual";
+          qa.capturedAt = "";
+        }
+      };
+      qInput.addEventListener("input", () => { qa.question = qInput.value; promoteOnEdit(); });
+      aInput.addEventListener("input", () => { qa.answer = aInput.value; promoteOnEdit(); });
+      removeBtn.addEventListener("click", () => {
+        section.customAnswers = section.customAnswers.filter((item) => item.id !== id);
+        renderSavedAnswers();
+      });
+    });
+  }
+
+  if (qaSearchEl) {
+    qaSearchEl.addEventListener("input", () => {
+      qaSearchTerm = qaSearchEl.value || "";
+      renderSavedAnswers();
+    });
+  }
+
+  if (qaAddBtn) {
+    qaAddBtn.addEventListener("click", () => {
+      const section = getEditingSection();
+      if (!section) return;
+      if (!Array.isArray(section.customAnswers)) section.customAnswers = [];
+      section.customAnswers.push({
+        id: "qa_" + Math.random().toString(36).slice(2, 10),
+        question: "",
+        answer: "",
+        source: "manual",
+        capturedAt: ""
+      });
+      qaSearchTerm = "";
+      if (qaSearchEl) qaSearchEl.value = "";
+      renderSavedAnswers();
+      const rows = qaListEl.querySelectorAll(".qa-row");
+      const last = rows[rows.length - 1];
+      if (last) last.querySelector(".qa-question").focus();
+    });
   }
 
   function openProfileModal() {
@@ -1150,6 +1281,208 @@
   }
 
   if (aiCoverGenBtn) aiCoverGenBtn.addEventListener("click", generateCoverLetterForCurrentJob);
+
+  // ---------- AI: fit analysis (CV ↔ JD) ----------
+  //
+  // Single shot, JSON response. We cache on the job so the score persists
+  // across opens and syncs through Drive — invalidated when CV or JD changes.
+
+  const aiFitBody = $("ai-fit-body");
+  const aiFitToggle = $("ai-fit-toggle");
+  const aiFitGenBtn = $("ai-fit-generate");
+  const aiFitStatusEl = $("ai-fit-status");
+  const aiFitResult = $("ai-fit-result");
+  const aiFitScoreNum = $("ai-fit-score-num");
+  const aiFitScoreRing = $("ai-fit-score-ring");
+  const aiFitSummary = $("ai-fit-summary");
+  const aiFitStrengths = $("ai-fit-strengths");
+  const aiFitMissing = $("ai-fit-missing");
+
+  function setFitStatus(label) {
+    if (aiFitStatusEl) aiFitStatusEl.textContent = label || "";
+  }
+
+  function fitScoreColor(score) {
+    if (score >= 75) return "#0f766e"; // teal — strong fit
+    if (score >= 50) return "#d97706"; // amber — partial
+    return "#b91c1c";                  // red — weak
+  }
+
+  function renderFitAnalysis(fit) {
+    if (!aiFitResult) return;
+    if (!fit) {
+      aiFitResult.hidden = true;
+      return;
+    }
+    aiFitResult.hidden = false;
+    aiFitScoreNum.textContent = String(fit.score);
+    aiFitScoreRing.style.setProperty("--fit-color", fitScoreColor(fit.score));
+    aiFitScoreRing.style.setProperty("--fit-pct", String(fit.score));
+    aiFitSummary.textContent = fit.summary || "";
+    const renderList = (ul, items, emptyMsg) => {
+      ul.innerHTML = "";
+      const arr = Array.isArray(items) ? items : [];
+      if (!arr.length) {
+        const li = document.createElement("li");
+        li.className = "fit-list-empty";
+        li.textContent = emptyMsg;
+        ul.appendChild(li);
+        return;
+      }
+      arr.forEach((item) => {
+        const li = document.createElement("li");
+        li.textContent = item;
+        ul.appendChild(li);
+      });
+    };
+    renderList(aiFitStrengths, fit.strengths, "No specific strengths called out.");
+    renderList(aiFitMissing, fit.missing, "Nothing major missing — strong overlap.");
+  }
+
+  function loadCachedFitIntoModal(job) {
+    setFitStatus("");
+    renderFitAnalysis(null);
+    if (!job || !job.aiFitAnalysis) return;
+    const inputs = collectCoverLetterInputs();
+    const freshHash = data.hashFitInputs({ cv: inputs.cv, jd: inputs.jd });
+    renderFitAnalysis(job.aiFitAnalysis);
+    if (job.aiFitAnalysis.inputsHash === freshHash) {
+      setFitStatus(`Cached · ${job.aiFitAnalysis.model || job.aiFitAnalysis.provider || "AI"}`);
+    } else {
+      setFitStatus("Cached · CV or JD changed — re-run");
+    }
+  }
+
+  if (aiFitToggle) {
+    aiFitToggle.addEventListener("click", () => {
+      if (!aiFitBody) return;
+      const willShow = aiFitBody.hidden;
+      aiFitBody.hidden = !willShow;
+      aiFitToggle.textContent = willShow ? "Hide" : "Show";
+      if (willShow) {
+        const job = currentJobFromForm();
+        if (job) loadCachedFitIntoModal(job);
+      }
+    });
+  }
+
+  const FIT_SYSTEM_PROMPT =
+    "You are a hiring manager assessing CV-to-job fit. "
+    + "Score 0–100 based on overlap of skills, seniority, and domain. "
+    + "Be honest — most candidates score 40–70. Reserve 80+ for strong matches. "
+    + "Return ONLY valid JSON, no markdown, no preamble. Schema: "
+    + '{"score": integer 0-100, "strengths": [up to 5 short phrases], '
+    + '"missing": [up to 5 short JD keywords absent from the CV], '
+    + '"summary": "one sentence, max 220 chars"}.';
+
+  function buildFitPrompt(inputs) {
+    const cv = (inputs.cv || "").slice(0, 4000);
+    const jd = (inputs.jd || "").slice(0, 4000);
+    return [
+      "CV:",
+      cv,
+      "",
+      "Job description:",
+      jd,
+      "",
+      "Return JSON only."
+    ].join("\n");
+  }
+
+  // Some providers (Anthropic, on-device) ignore the responseFormat hint and
+  // wrap JSON in prose. Extract the first balanced {…} block defensively.
+  function extractJson(text) {
+    const s = String(text || "");
+    const start = s.indexOf("{");
+    const end = s.lastIndexOf("}");
+    if (start < 0 || end <= start) return null;
+    try { return JSON.parse(s.slice(start, end + 1)); } catch (_) { return null; }
+  }
+
+  async function analyzeFitForCurrentJob() {
+    if (!window.JobTrailAI) {
+      toast("AI module not loaded", { error: true });
+      return;
+    }
+    const inputs = collectCoverLetterInputs();
+    const p = ensureProfileLoaded();
+    const ai = p.ai || { provider: "none" };
+
+    if (ai.provider === "none" || !ai.apiKey) {
+      toast("Set an AI provider + API key in Profile first.", { error: true });
+      openProfileModal();
+      return;
+    }
+    if (!inputs.cv) {
+      toast("Add a CV to your active section in Profile first.", { error: true });
+      openProfileModal();
+      return;
+    }
+    if (!inputs.jd) {
+      toast("This job has no description archived — paste one to analyze fit.", { error: true });
+      return;
+    }
+
+    const job = currentJobFromForm();
+    const inputsHash = data.hashFitInputs({ cv: inputs.cv, jd: inputs.jd });
+
+    if (job && job.aiFitAnalysis && job.aiFitAnalysis.inputsHash === inputsHash) {
+      renderFitAnalysis(job.aiFitAnalysis);
+      setFitStatus(`Cached · ${job.aiFitAnalysis.model || job.aiFitAnalysis.provider}`);
+      toast("Loaded cached analysis");
+      return;
+    }
+
+    aiFitGenBtn.disabled = true;
+    const originalLabel = aiFitGenBtn.textContent;
+    aiFitGenBtn.textContent = "Analyzing…";
+    setFitStatus(`Calling ${ai.provider}…`);
+
+    try {
+      const raw = await window.JobTrailAI.generate({
+        provider: ai.provider,
+        apiKey: ai.apiKey,
+        model: ai.model,
+        system: FIT_SYSTEM_PROMPT,
+        user: buildFitPrompt(inputs),
+        responseFormat: "json"
+      });
+      const parsed = extractJson(raw);
+      if (!parsed || typeof parsed.score !== "number") {
+        throw new Error("Model returned malformed JSON");
+      }
+      const fit = data.sanitizeAiFitAnalysis({
+        score: parsed.score,
+        strengths: parsed.strengths,
+        missing: parsed.missing,
+        summary: parsed.summary,
+        model: ai.model || "",
+        provider: ai.provider,
+        inputsHash,
+        generatedAt: new Date().toISOString()
+      });
+      if (!fit) throw new Error("Sanitized fit is empty");
+      renderFitAnalysis(fit);
+      setFitStatus(`Generated · ${ai.model || ai.provider}`);
+
+      if (job) {
+        const updated = Object.assign({}, job, { aiFitAnalysis: fit });
+        const sanitized = data.sanitizeJob(updated);
+        state.jobs = state.jobs.map((j) => (j.id === sanitized.id ? sanitized : j));
+        await saveToDrive();
+        renderJobs();
+      }
+    } catch (err) {
+      console.error(err);
+      setFitStatus("");
+      toast("Fit analysis failed: " + (err && err.message ? err.message : "unknown"), { error: true });
+    } finally {
+      aiFitGenBtn.disabled = false;
+      aiFitGenBtn.textContent = originalLabel;
+    }
+  }
+
+  if (aiFitGenBtn) aiFitGenBtn.addEventListener("click", analyzeFitForCurrentJob);
 
   // ---------- PWA: service worker + install prompt ----------
 

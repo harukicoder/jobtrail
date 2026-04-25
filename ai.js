@@ -90,21 +90,25 @@
   }
 
   async function generateOpenAI(opts) {
-    const { system, user, apiKey, model, onChunk } = opts;
+    const { system, user, apiKey, model, onChunk, responseFormat } = opts;
+    const body = {
+      model: model || "gpt-4o-mini",
+      stream: true,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user }
+      ]
+    };
+    // OpenAI/DeepSeek support strict JSON via response_format. Used by the
+    // fit-analysis path so we can JSON.parse the result without regex repair.
+    if (responseFormat === "json") body.response_format = { type: "json_object" };
     const res = await fetch(OPENAI_URL, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${apiKey}`
       },
-      body: JSON.stringify({
-        model: model || "gpt-4o-mini",
-        stream: true,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user }
-        ]
-      })
+      body: JSON.stringify(body)
     });
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
@@ -122,21 +126,23 @@
     // SSE stream frame shape (`choices[0].delta.content`). We keep a separate
     // function rather than reusing generateOpenAI so the error prefix makes
     // failures easy to attribute in logs.
-    const { system, user, apiKey, model, onChunk } = opts;
+    const { system, user, apiKey, model, onChunk, responseFormat } = opts;
+    const body = {
+      model: model || "deepseek-chat",
+      stream: true,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user }
+      ]
+    };
+    if (responseFormat === "json") body.response_format = { type: "json_object" };
     const res = await fetch(DEEPSEEK_URL, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${apiKey}`
       },
-      body: JSON.stringify({
-        model: model || "deepseek-chat",
-        stream: true,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user }
-        ]
-      })
+      body: JSON.stringify(body)
     });
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
@@ -152,16 +158,18 @@
     // Gemini's streaming SSE uses a different frame format and the v1beta
     // endpoint expects the key as a query param. Using non-streaming here
     // because Gemini's SSE wrapping is fiddly and the letters are short.
-    const { system, user, apiKey, model, onChunk } = opts;
+    const { system, user, apiKey, model, onChunk, responseFormat } = opts;
     const m = model || "gemini-1.5-flash-latest";
     const url = `${GEMINI_URL}/${encodeURIComponent(m)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const generationConfig = { maxOutputTokens: 800, temperature: 0.7 };
+    if (responseFormat === "json") generationConfig.responseMimeType = "application/json";
     const res = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         systemInstruction: { role: "system", parts: [{ text: system }] },
         contents: [{ role: "user", parts: [{ text: user }] }],
-        generationConfig: { maxOutputTokens: 800, temperature: 0.7 }
+        generationConfig
       })
     });
     if (!res.ok) {

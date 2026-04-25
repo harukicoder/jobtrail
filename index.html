@@ -156,6 +156,41 @@
 
             <div class="span-2 prep-block">
               <div class="prep-head">
+                <span class="prep-title">📊 Fit analysis</span>
+                <div class="prep-head-actions">
+                  <span class="ai-status" id="ai-fit-status"></span>
+                  <button type="button" class="ghost-link" id="ai-fit-toggle">Show</button>
+                </div>
+              </div>
+              <div class="prep-body" id="ai-fit-body" hidden>
+                <div class="ai-cover-actions">
+                  <button type="button" class="primary-button" id="ai-fit-generate">Analyze fit</button>
+                  <span class="ai-cover-hint" id="ai-fit-hint">Compares your active section's CV against this job description. Cached per-job.</span>
+                </div>
+                <div class="fit-result" id="ai-fit-result" hidden>
+                  <div class="fit-score-wrap">
+                    <div class="fit-score-ring" id="ai-fit-score-ring">
+                      <span class="fit-score-num" id="ai-fit-score-num">—</span>
+                      <span class="fit-score-cap">fit</span>
+                    </div>
+                    <p class="fit-summary" id="ai-fit-summary"></p>
+                  </div>
+                  <div class="fit-lists">
+                    <div class="fit-list-block">
+                      <p class="eyebrow">Strengths</p>
+                      <ul class="fit-list" id="ai-fit-strengths"></ul>
+                    </div>
+                    <div class="fit-list-block">
+                      <p class="eyebrow">Missing keywords</p>
+                      <ul class="fit-list" id="ai-fit-missing"></ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="span-2 prep-block">
+              <div class="prep-head">
                 <span class="prep-title">✉️ AI cover letter</span>
                 <div class="prep-head-actions">
                   <span class="ai-status" id="ai-cover-status"></span>
@@ -253,6 +288,17 @@
                 <textarea id="profile-coverLetter" rows="6" placeholder="Dear {company} hiring team,&#10;&#10;I'm excited to apply for the {role} role. ...&#10;&#10;Placeholders: {company}, {role}, {jobTitle}, {location}"></textarea>
               </label>
             </div>
+          </fieldset>
+
+          <fieldset class="profile-group">
+            <legend>Saved answers</legend>
+            <p class="modal-sub">Recurring form answers (salary, work auth, languages…). The extension auto-captures these as you fill new forms — review, edit, or add new ones here.</p>
+            <div class="qa-toolbar">
+              <input id="qa-search" type="search" placeholder="Search saved answers…" autocomplete="off">
+              <button class="secondary-button" id="qa-add" type="button">+ Add answer</button>
+            </div>
+            <div class="qa-list" id="qa-list"></div>
+            <p class="qa-hint" id="qa-empty-hint" hidden>No saved answers yet. Use the Chrome extension's autofill on any application form — answers get captured automatically.</p>
           </fieldset>
 
           <fieldset class="profile-group">
