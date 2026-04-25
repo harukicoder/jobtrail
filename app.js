@@ -24,6 +24,31 @@
   let lastRequestInteractive = false;
 
   const SIGNED_IN_FLAG = "jobtrail_was_signed_in_v1";
+  // We cache the access token + expiry in localStorage so refreshes within
+  // the token TTL don't need any round-trip to Google. The token is scoped
+  // to drive.file (only files this app created) so the blast radius is tiny;
+  // GIS silent-refresh fails too often (third-party cookies / FedCM quirks)
+  // to be the sole persistence mechanism. On expiry we fall back to silent
+  // refresh, then to interactive sign-in.
+  const TOKEN_CACHE_KEY = "jobtrail_oauth_token_v1";
+
+  function readCachedToken() {
+    try {
+      const raw = localStorage.getItem(TOKEN_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return null;
+      if (typeof parsed.token !== "string" || !parsed.token) return null;
+      if (typeof parsed.expiry !== "number" || Date.now() >= parsed.expiry) return null;
+      return parsed;
+    } catch (_) { return null; }
+  }
+  function writeCachedToken(token, expiry) {
+    try { localStorage.setItem(TOKEN_CACHE_KEY, JSON.stringify({ token, expiry })); } catch (_) {}
+  }
+  function clearCachedToken() {
+    try { localStorage.removeItem(TOKEN_CACHE_KEY); } catch (_) {}
+  }
 
   // DOM refs
   const $ = (id) => document.getElementById(id);
@@ -103,6 +128,8 @@
           currentToken = response.access_token;
           const expiresIn = Number(response.expires_in) || 3600;
           tokenExpiry = Date.now() + (expiresIn - 60) * 1000;
+          // Persist so a refresh within the token TTL skips Google entirely.
+          writeCachedToken(currentToken, tokenExpiry);
           if (pendingTokenResolve) {
             pendingTokenResolve(currentToken);
             pendingTokenResolve = null;
@@ -168,7 +195,14 @@
 
   async function tokenProvider() {
     if (currentToken && Date.now() < tokenExpiry) return currentToken;
-    // Try silent refresh first. If user previously consented, this works.
+    // Cache may have been populated by attemptSilentRestore on boot.
+    const cached = readCachedToken();
+    if (cached) {
+      currentToken = cached.token;
+      tokenExpiry = cached.expiry;
+      return currentToken;
+    }
+    // Try silent refresh. If user previously consented, this works.
     const silent = await requestToken({ interactive: false });
     if (silent) return silent;
     return null;
@@ -180,6 +214,7 @@
     }
     currentToken = null;
     tokenExpiry = 0;
+    clearCachedToken();
     drive.invalidateFileCache();
   }
 
@@ -753,6 +788,29 @@
     let flag;
     try { flag = localStorage.getItem(SIGNED_IN_FLAG); } catch (_) { flag = null; }
     if (!flag || !hasValidClientId()) return;
+
+    // Fast path: the previous session's token is still valid. Skip Google
+    // entirely — this is what makes refreshes feel instant. The token is
+    // scoped to drive.file so caching it locally has minimal blast radius.
+    const cached = readCachedToken();
+    if (cached) {
+      currentToken = cached.token;
+      tokenExpiry = cached.expiry;
+      setSync("syncing", "Restoring session…");
+      try {
+        showSignedIn();
+        await loadFromDrive();
+        renderJobs();
+        return;
+      } catch (err) {
+        // Cached token may have been revoked server-side — fall through to
+        // the silent-refresh path below, which will re-prompt if needed.
+        console.warn("Cached-token restore failed, falling back to silent refresh:", err);
+        clearCachedToken();
+        currentToken = null;
+        tokenExpiry = 0;
+      }
+    }
 
     const ready = await waitForGis(5000);
     if (!ready) return;

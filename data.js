@@ -3,7 +3,7 @@
   const SNAPSHOT_KEY = "jobtrail_snapshots_v1";
   const PROFILE_KEY = "jobtrail_profile_v1";
   const AUTOFILL_MAPPINGS_KEY = "jobtrail_autofill_mappings_v1";
-  const MAX_SNAPSHOTS = 20;
+  const MAX_SNAPSHOTS = 8;
   const MAX_MAPPINGS_PER_HOST = 60;
 
   const PROFILE_COMMON_FIELDS = [
@@ -492,10 +492,31 @@
     }
   }
 
+  // Strip heavy AI / description / interview-prep fields from snapshot copies.
+  // Snapshots are local restore points for "I deleted things, undo" — they
+  // need to remember which jobs existed and their pipeline state. The heavy
+  // AI cache is recoverable by re-running the model and the JD is recoverable
+  // from Drive. Keeping it in every snapshot copy was the single biggest
+  // contributor to the dashboard's runaway memory: with 100 jobs and 20 saved
+  // snapshots, this alone was ~60 MB duplicated through storage events.
+  function lightenJobsForSnapshot(jobs) {
+    if (!Array.isArray(jobs)) return [];
+    return jobs.map((j) => {
+      if (!j) return j;
+      const lite = Object.assign({}, j);
+      delete lite.description;
+      delete lite.aiCoverLetter;
+      delete lite.aiFitAnalysis;
+      delete lite.interviewPrep;
+      return lite;
+    });
+  }
+
   async function recordSnapshot(jobs) {
     const existing = await readSnapshots();
     const latest = existing[0];
-    const serialized = JSON.stringify(jobs || []);
+    const lite = lightenJobsForSnapshot(jobs);
+    const serialized = JSON.stringify(lite);
 
     if (latest && JSON.stringify(latest.jobs || []) === serialized) {
       return existing;
@@ -504,8 +525,8 @@
     const snapshot = {
       id: `snap_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       takenAt: new Date().toISOString(),
-      count: Array.isArray(jobs) ? jobs.length : 0,
-      jobs: Array.isArray(jobs) ? jobs : []
+      count: lite.length,
+      jobs: lite
     };
 
     const next = [snapshot, ...existing].slice(0, MAX_SNAPSHOTS);
