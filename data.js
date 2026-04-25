@@ -480,6 +480,12 @@
 
     await storageSet(FALLBACK_STORAGE_AREA, payload);
     await recordSnapshot(sanitized).catch(() => undefined);
+    // Prime the cache with the just-written sanitized list so the next read
+    // skips the storage round-trip entirely. Without this, the storage event
+    // we just fired triggers an onChanged invalidation which forces the
+    // immediately-following getAllJobs to re-read both areas.
+    jobsCache = sanitized;
+    jobsCacheAt = Date.now();
     return sanitized;
   }
 
@@ -557,28 +563,54 @@
     return restored;
   }
 
+  // In-memory cache for `ensureStorageConsistency`. Without this, getAllJobs
+  // was hitting storage twice (sync + local) on every call — and getAllJobs
+  // is invoked on every page navigation (CHECK_PAGE_STATUS), every dashboard
+  // re-render, every popup open, every Drive sync tick. With a 1.5 s TTL,
+  // bursts of activity coalesce into a single round-trip; the storage write
+  // path invalidates the cache immediately so user actions stay coherent.
+  let jobsCache = null;
+  let jobsCacheAt = 0;
+  const JOBS_CACHE_TTL_MS = 1500;
+
+  function invalidateJobsCache() {
+    jobsCache = null;
+    jobsCacheAt = 0;
+  }
+
+  // Invalidate the cache whenever storage actually changes — covers Drive
+  // sync pulls landing in the background, and writes from other contexts
+  // (popup, content script) that happened outside this script's writeJobs.
+  if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
+    try {
+      chrome.storage.onChanged.addListener((changes) => {
+        if (changes && changes[STORAGE_KEY]) invalidateJobsCache();
+      });
+    } catch (_) { /* not in extension context */ }
+  }
+
   async function ensureStorageConsistency() {
+    if (jobsCache && Date.now() - jobsCacheAt < JOBS_CACHE_TTL_MS) {
+      return jobsCache;
+    }
     const syncJobsRaw = await readJobsFromArea(PRIMARY_STORAGE_AREA);
     const localJobsRaw = await readJobsFromArea(FALLBACK_STORAGE_AREA);
     // Drop tombstones older than 30 days here — they've had ample time to sync.
     const syncJobs = purgeOldTombstones(syncJobsRaw);
     const localJobs = purgeOldTombstones(localJobsRaw);
 
+    let result;
     if (syncJobs.length === 0 && localJobs.length > 0) {
       try {
         await storageSet(PRIMARY_STORAGE_AREA, { [STORAGE_KEY]: localJobs });
       } catch (error) {
         // Sync might be disabled; local remains the source of truth for this device.
       }
-      return localJobs;
-    }
-
-    if (syncJobs.length > 0 && localJobs.length === 0) {
+      result = localJobs;
+    } else if (syncJobs.length > 0 && localJobs.length === 0) {
       await storageSet(FALLBACK_STORAGE_AREA, { [STORAGE_KEY]: syncJobs });
-      return syncJobs;
-    }
-
-    if (syncJobs.length > 0 && localJobs.length > 0) {
+      result = syncJobs;
+    } else if (syncJobs.length > 0 && localJobs.length > 0) {
       const syncStamp = latestTimestamp(syncJobs);
       const localStamp = latestTimestamp(localJobs);
       let source = syncStamp >= localStamp ? syncJobs : localJobs;
@@ -601,10 +633,14 @@
         await writeJobsToAreas(source);
       }
 
-      return source;
+      result = source;
+    } else {
+      result = [];
     }
 
-    return [];
+    jobsCache = result;
+    jobsCacheAt = Date.now();
+    return result;
   }
 
   async function getAllJobs() {
@@ -973,6 +1009,48 @@
       .toLowerCase();
   }
 
+  // Batched form of captureCustomAnswer: takes an array of {question, answer}
+  // and persists them in a single profile read + write. The single-message
+  // background handler accumulates 700 ms of captures and calls this once
+  // per batch — ten form fields filled in succession became one storage
+  // round-trip instead of ten.
+  async function captureCustomAnswers(items) {
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) return { added: 0 };
+
+    const profile = await getProfile();
+    const section = findActiveSection(profile);
+    if (!section) return { added: 0, reason: "no-section" };
+
+    const existing = Array.isArray(section.customAnswers) ? section.customAnswers : [];
+    // Dedupe within the batch as well: identical questions arriving back-to-back
+    // (rare but possible if the user re-clicks the same field) shouldn't add twice.
+    const existingNorms = new Set(existing.map((e) => normalizeCustomAnswerQuestion(e.question)));
+    const additions = [];
+    for (const item of list) {
+      const q = String((item && item.question) || "").trim();
+      const a = String((item && item.answer) || "").trim();
+      if (!q || !a) continue;
+      if (q.length < 4 || a.length > 2000) continue;
+      const norm = normalizeCustomAnswerQuestion(q);
+      if (existingNorms.has(norm)) continue;
+      existingNorms.add(norm);
+      additions.push({
+        id: "qa_" + Math.random().toString(36).slice(2, 10),
+        question: q.slice(0, 200),
+        answer: a.slice(0, 2000),
+        source: "captured",
+        capturedAt: new Date().toISOString()
+      });
+    }
+
+    if (!additions.length) return { added: 0, reason: "all-duplicates" };
+
+    section.customAnswers = sanitizeCustomAnswers(existing.concat(additions));
+    await saveProfile(profile);
+    return { added: additions.length };
+  }
+
   // Append a captured question→answer pair to the active section's customAnswers.
   // De-dupes against existing answers (case-insensitive, punctuation-insensitive).
   // Returns { added: true|false, reason? } so callers can show feedback.
@@ -1096,6 +1174,7 @@
     restoreSnapshot,
     sanitizeCustomAnswers,
     captureCustomAnswer,
+    captureCustomAnswers,
     normalizeCustomAnswerQuestion,
     sanitizeJob,
     sanitizeProfile,
