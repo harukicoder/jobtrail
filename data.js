@@ -589,9 +589,17 @@
   async function getAllJobs() {
     const jobs = await ensureStorageConsistency();
     // Hide tombstones from every caller (UI, badge, duplicate-detection).
+    // Sort by updatedAt desc, but break ties with id so the order is stable
+    // across renders — without the secondary key, two jobs with identical
+    // updatedAt could swap positions on every reload, causing the dashboard
+    // to "shuffle" rows mid-click after a Drive sync.
     return jobs
       .filter((j) => !j.deletedAt)
-      .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+      .sort((a, b) => {
+        const diff = new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+        if (diff !== 0) return diff;
+        return String(a.id || "").localeCompare(String(b.id || ""));
+      });
   }
 
   async function getAllJobsIncludingTombstones() {
