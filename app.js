@@ -990,6 +990,25 @@
     }
   }
 
+  // Pull latest from Drive whenever the tab becomes visible so changes made
+  // in the extension (or another device) show up the moment the user
+  // switches back to the webapp. Cooldown prevents thrashing on rapid alt-tab.
+  let lastVisiblePullAt = 0;
+  const VISIBLE_PULL_COOLDOWN_MS = 8000;
+  document.addEventListener("visibilitychange", async () => {
+    if (document.hidden) return;
+    if (!state.loaded) return; // not signed-in / never loaded yet
+    if (Date.now() - lastVisiblePullAt < VISIBLE_PULL_COOLDOWN_MS) return;
+    lastVisiblePullAt = Date.now();
+    try {
+      await loadFromDrive();
+      renderJobs();
+    } catch (err) {
+      // Soft fail — the user's existing in-memory state stays usable.
+      console.warn("Visibility pull failed:", err);
+    }
+  });
+
   function showSignedIn() {
     signedOutCard.hidden = true;
     statsRow.hidden = false;
