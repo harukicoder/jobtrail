@@ -992,22 +992,44 @@
 
   // Pull latest from Drive whenever the tab becomes visible so changes made
   // in the extension (or another device) show up the moment the user
-  // switches back to the webapp. Cooldown prevents thrashing on rapid alt-tab.
+  // switches back to the webapp. We listen on BOTH visibilitychange and
+  // window.focus because Chrome dispatches them in different orders
+  // depending on how the tab was activated. A short 2 s cooldown prevents
+  // thrashing if both fire back-to-back. We also schedule a follow-up pull
+  // ~3 s later so writes from the other surface that hadn't landed yet still
+  // get caught on this visit.
   let lastVisiblePullAt = 0;
-  const VISIBLE_PULL_COOLDOWN_MS = 8000;
-  document.addEventListener("visibilitychange", async () => {
-    if (document.hidden) return;
-    if (!state.loaded) return; // not signed-in / never loaded yet
+  const VISIBLE_PULL_COOLDOWN_MS = 2000;
+  let followupPullTimer = null;
+  async function pullFromDriveIfDue() {
+    if (!state.loaded) return;
     if (Date.now() - lastVisiblePullAt < VISIBLE_PULL_COOLDOWN_MS) return;
     lastVisiblePullAt = Date.now();
     try {
       await loadFromDrive();
       renderJobs();
     } catch (err) {
-      // Soft fail — the user's existing in-memory state stays usable.
       console.warn("Visibility pull failed:", err);
     }
-  });
+  }
+  function scheduleFollowupPull() {
+    if (followupPullTimer) clearTimeout(followupPullTimer);
+    followupPullTimer = setTimeout(async () => {
+      followupPullTimer = null;
+      if (!state.loaded) return;
+      try {
+        await loadFromDrive();
+        renderJobs();
+      } catch (err) { /* ignore */ }
+    }, 3000);
+  }
+  function onWebappActivate() {
+    if (document.hidden) return;
+    pullFromDriveIfDue();
+    scheduleFollowupPull();
+  }
+  document.addEventListener("visibilitychange", onWebappActivate);
+  window.addEventListener("focus", onWebappActivate);
 
   function showSignedIn() {
     signedOutCard.hidden = true;
