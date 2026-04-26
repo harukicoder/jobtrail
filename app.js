@@ -270,15 +270,69 @@
     return `<span class="status-chip" style="background:${color}">${escapeHtml(label)}</span>`;
   }
 
+  // Sortable columns: persisted to localStorage so the user's choice survives
+  // refreshes. `dateApplied` desc is the sensible default — most-recent first.
+  const SORT_PREF_KEY = "jobtrail_sort_pref_v1";
+  const SORT_ORDER = ["bookmarked", "applying", "applied", "interviewing", "offer", "rejected", "archived"];
+  const sortState = (() => {
+    try {
+      const raw = localStorage.getItem(SORT_PREF_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed.key === "string" && (parsed.dir === "asc" || parsed.dir === "desc")) {
+          return { key: parsed.key, dir: parsed.dir };
+        }
+      }
+    } catch (_) {}
+    return { key: "dateApplied", dir: "desc" };
+  })();
+
+  function persistSortPref() {
+    try { localStorage.setItem(SORT_PREF_KEY, JSON.stringify(sortState)); } catch (_) {}
+  }
+
+  function compareJobs(a, b, key, dir) {
+    const mul = dir === "asc" ? 1 : -1;
+    if (key === "status") {
+      const ai = SORT_ORDER.indexOf(a.status); const bi = SORT_ORDER.indexOf(b.status);
+      return mul * (ai - bi);
+    }
+    if (key === "dateApplied") {
+      // Empty dates sort last regardless of direction so blank rows don't leap
+      // to the top of an ascending sort.
+      const av = a.dateApplied || ""; const bv = b.dateApplied || "";
+      if (!av && !bv) return 0;
+      if (!av) return 1;
+      if (!bv) return -1;
+      return mul * (av < bv ? -1 : av > bv ? 1 : 0);
+    }
+    const av = String((a[key] || "")).toLowerCase();
+    const bv = String((b[key] || "")).toLowerCase();
+    if (!av && !bv) return 0;
+    if (!av) return 1;
+    if (!bv) return -1;
+    return mul * av.localeCompare(bv);
+  }
+
+  function applyHeaderSortIndicators() {
+    document.querySelectorAll(".th-sortable").forEach((th) => {
+      const key = th.getAttribute("data-sort-key");
+      th.classList.toggle("is-sorted", key === sortState.key);
+      th.classList.toggle("sorted-asc", key === sortState.key && sortState.dir === "asc");
+      th.classList.toggle("sorted-desc", key === sortState.key && sortState.dir === "desc");
+    });
+  }
+
   function filteredJobs() {
     const q = (jobsSearch.value || "").trim().toLowerCase();
     const status = jobsFilterStatus.value;
-    return liveJobs().filter((j) => {
+    const list = liveJobs().filter((j) => {
       if (status && j.status !== status) return false;
       if (!q) return true;
       const hay = [j.jobTitle, j.company, j.location, j.notes].join(" ").toLowerCase();
       return hay.indexOf(q) !== -1;
     });
+    return list.sort((a, b) => compareJobs(a, b, sortState.key, sortState.dir));
   }
 
   function renderJobs() {
@@ -318,9 +372,28 @@
         </tr>
       `;
     }).join("");
+    applyHeaderSortIndicators();
     recomputeStats();
     renderFunnel();
   }
+
+  // Header click: cycle the column's sort. Same column → flip direction.
+  // Different column → switch and pick a sensible default direction.
+  document.querySelectorAll(".th-sortable").forEach((th) => {
+    th.addEventListener("click", () => {
+      const key = th.getAttribute("data-sort-key");
+      if (!key) return;
+      if (sortState.key === key) {
+        sortState.dir = sortState.dir === "asc" ? "desc" : "asc";
+      } else {
+        sortState.key = key;
+        // Dates and statuses default to "newest first"; text columns to A→Z.
+        sortState.dir = (key === "dateApplied" || key === "status") ? "desc" : "asc";
+      }
+      persistSortPref();
+      renderJobs();
+    });
+  });
 
   // ---------- Funnel analytics ----------
 
@@ -545,6 +618,16 @@
     if (fitToggle) fitToggle.textContent = hasCachedFit ? "Hide" : "Show";
     loadCachedFitIntoModal(base);
 
+    // Status timeline: preload, auto-expand if there are 2+ entries (a real
+    // timeline). New jobs with just the seed entry stay collapsed by default.
+    const tlBody = document.getElementById("field-timeline-body");
+    const tlToggle = document.getElementById("field-timeline-toggle");
+    const tlHistory = (base && Array.isArray(base.stageHistory)) ? base.stageHistory : [];
+    const hasMeaningfulTimeline = tlHistory.length > 1;
+    if (tlBody) tlBody.hidden = !hasMeaningfulTimeline;
+    if (tlToggle) tlToggle.textContent = hasMeaningfulTimeline ? "Hide" : "Show";
+    renderStageTimeline(tlHistory);
+
     jobModal.hidden = false;
     setTimeout(() => $("field-jobTitle").focus(), 10);
   }
@@ -574,6 +657,74 @@
         ? "Hide"
         : (descEl.value ? "Show" : "Add");
       if (willShow) descEl.focus();
+    });
+  }
+
+  // ---------- Status timeline ----------
+
+  function fmtTimelineDate(iso) {
+    const t = new Date(iso).getTime();
+    if (!Number.isFinite(t)) return "";
+    const days = Math.round((Date.now() - t) / (24 * 3600 * 1000));
+    const abs = new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    if (days <= 0) return `today · ${abs}`;
+    if (days === 1) return `yesterday · ${abs}`;
+    if (days < 30) return `${days}d ago · ${abs}`;
+    if (days < 365) return `${Math.round(days / 30)}mo ago · ${abs}`;
+    return `${Math.round(days / 365)}y ago · ${abs}`;
+  }
+
+  function timelineDuration(prevIso, nextIso) {
+    const a = new Date(prevIso).getTime();
+    const b = new Date(nextIso).getTime();
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return "";
+    const days = Math.max(0, Math.round((b - a) / (24 * 3600 * 1000)));
+    if (days === 0) return "same day";
+    if (days === 1) return "1 day";
+    if (days < 30) return `${days} days`;
+    if (days < 365) return `${Math.round(days / 30)} mo`;
+    return `${Math.round(days / 365)} yr`;
+  }
+
+  function renderStageTimeline(history) {
+    const list = $("field-timeline-list");
+    const empty = $("field-timeline-empty");
+    if (!list) return;
+    list.innerHTML = "";
+    const items = Array.isArray(history) ? history : [];
+    if (!items.length) {
+      if (empty) empty.hidden = false;
+      return;
+    }
+    if (empty) empty.hidden = true;
+    items.forEach((entry, idx) => {
+      const li = document.createElement("li");
+      li.className = "timeline-item";
+      const color = data.statusColor ? data.statusColor(entry.status) : "#0f766e";
+      li.style.setProperty("--timeline-color", color);
+      const dur = idx > 0 ? timelineDuration(items[idx - 1].at, entry.at) : "";
+      li.innerHTML = `
+        <span class="timeline-dot" style="background:${escapeHtml(color)}"></span>
+        <div class="timeline-body">
+          <div class="timeline-row-head">
+            <span class="status-chip" style="background:${escapeHtml(color)}">${escapeHtml(data.statusLabel(entry.status))}</span>
+            ${dur ? `<span class="timeline-dur">+${escapeHtml(dur)}</span>` : ""}
+          </div>
+          <div class="timeline-when">${escapeHtml(fmtTimelineDate(entry.at))}</div>
+        </div>
+      `;
+      list.appendChild(li);
+    });
+  }
+
+  const tlToggleBtn = $("field-timeline-toggle");
+  if (tlToggleBtn) {
+    tlToggleBtn.addEventListener("click", () => {
+      const tlBody = $("field-timeline-body");
+      if (!tlBody) return;
+      const willShow = tlBody.hidden;
+      tlBody.hidden = !willShow;
+      tlToggleBtn.textContent = willShow ? "Hide" : "Show";
     });
   }
 

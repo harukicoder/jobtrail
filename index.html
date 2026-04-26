@@ -93,12 +93,12 @@
           <table class="jobs-table">
             <thead>
               <tr>
-                <th>Title</th>
-                <th>Company</th>
-                <th>Location</th>
-                <th>Work mode</th>
-                <th>Status</th>
-                <th>Applied</th>
+                <th class="th-sortable" data-sort-key="jobTitle">Title<span class="sort-ind"></span></th>
+                <th class="th-sortable" data-sort-key="company">Company<span class="sort-ind"></span></th>
+                <th class="th-sortable" data-sort-key="location">Location<span class="sort-ind"></span></th>
+                <th class="th-sortable" data-sort-key="workMode">Work mode<span class="sort-ind"></span></th>
+                <th class="th-sortable" data-sort-key="status">Status<span class="sort-ind"></span></th>
+                <th class="th-sortable" data-sort-key="dateApplied">Applied<span class="sort-ind"></span></th>
                 <th></th>
               </tr>
             </thead>
@@ -153,6 +153,17 @@
               <textarea id="field-description" rows="10" placeholder="Full job post text. Auto-captured by the extension — kept so you can re-read it after the posting is taken down." hidden></textarea>
               <span class="description-empty-hint" id="field-description-empty" hidden>No description archived yet. Paste one here, or re-save this job via the Chrome extension to auto-capture it.</span>
             </label>
+
+            <div class="span-2 prep-block">
+              <div class="prep-head">
+                <span class="prep-title">🕒 Status timeline</span>
+                <button type="button" class="ghost-link" id="field-timeline-toggle">Show</button>
+              </div>
+              <div class="prep-body" id="field-timeline-body" hidden>
+                <ol class="timeline" id="field-timeline-list"></ol>
+                <p class="timeline-empty" id="field-timeline-empty" hidden>No transitions yet — change the status and save to start tracking.</p>
+              </div>
+            </div>
 
             <div class="span-2 prep-block">
               <div class="prep-head">

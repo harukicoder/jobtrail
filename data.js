@@ -355,6 +355,50 @@
     };
   }
 
+  // Status timeline: every transition is recorded as `{ status, at }` so the
+  // UI can render a stage history per job. Capped at 24 entries to bound
+  // storage on jobs that get bumped many times. Order is chronological
+  // (oldest first), which makes appending O(1) and rendering trivial.
+  const STAGE_HISTORY_MAX = 24;
+
+  function sanitizeStageHistory(input) {
+    if (!Array.isArray(input)) return [];
+    const valid = input
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") return null;
+        const status = String(entry.status || "").trim();
+        if (!STATUS_META[status]) return null;
+        const at = String(entry.at || "").trim();
+        if (!at) return null;
+        const t = new Date(at).getTime();
+        if (!Number.isFinite(t)) return null;
+        return { status, at };
+      })
+      .filter(Boolean);
+    // Keep most recent STAGE_HISTORY_MAX entries (drop oldest if we ever go over).
+    if (valid.length > STAGE_HISTORY_MAX) {
+      return valid.slice(valid.length - STAGE_HISTORY_MAX);
+    }
+    return valid;
+  }
+
+  // Append a transition to a history list iff the new status differs from the
+  // most recent entry. Returns the (possibly unchanged) list. Pure — caller
+  // assigns the result back onto the job.
+  function appendStageTransition(history, newStatus, when) {
+    const list = Array.isArray(history) ? history.slice() : [];
+    const last = list[list.length - 1];
+    if (last && last.status === newStatus) return list;
+    list.push({
+      status: newStatus,
+      at: when || new Date().toISOString()
+    });
+    if (list.length > STAGE_HISTORY_MAX) {
+      return list.slice(list.length - STAGE_HISTORY_MAX);
+    }
+    return list;
+  }
+
   function hasInterviewPrepContent(prep) {
     if (!prep) return false;
     return Boolean(
@@ -376,6 +420,7 @@
     const interviewPrep = sanitizeInterviewPrep(input.interviewPrep);
     const aiCoverLetter = sanitizeAiCoverLetter(input.aiCoverLetter);
     const aiFitAnalysis = sanitizeAiFitAnalysis(input.aiFitAnalysis);
+    const stageHistory = sanitizeStageHistory(input.stageHistory);
     // Tombstone: when non-null, the job is a "this was deleted" marker that
     // we keep around so the deletion propagates through Drive sync. We filter
     // these out of UI reads (getAllJobs) and purge them after 30 days.
@@ -402,6 +447,7 @@
       interviewPrep,
       aiCoverLetter,
       aiFitAnalysis,
+      stageHistory,
       createdAt: input.createdAt || now,
       updatedAt: now,
       deletedAt
@@ -514,6 +560,7 @@
       delete lite.aiCoverLetter;
       delete lite.aiFitAnalysis;
       delete lite.interviewPrep;
+      delete lite.stageHistory;
       return lite;
     });
   }
@@ -721,6 +768,14 @@
         ...prepared,
         createdAt: jobs[existingIndex].createdAt || prepared.createdAt
       };
+      // Status timeline: append a transition entry whenever the new save
+      // changes status. Carries over the existing history so we keep the
+      // full trail (bookmarked → applying → applied → interviewing → …).
+      merged.stageHistory = appendStageTransition(
+        jobs[existingIndex].stageHistory || prepared.stageHistory,
+        merged.status,
+        merged.updatedAt
+      );
       jobs[existingIndex] = merged;
       savedRecord = merged;
     } else {
@@ -742,9 +797,16 @@
           id: jobs[duplicateIndex].id,
           createdAt: jobs[duplicateIndex].createdAt || prepared.createdAt
         };
+        merged.stageHistory = appendStageTransition(
+          jobs[duplicateIndex].stageHistory || prepared.stageHistory,
+          merged.status,
+          merged.updatedAt
+        );
         jobs[duplicateIndex] = merged;
         savedRecord = merged;
       } else {
+        // Brand-new record: seed the history with the initial status.
+        prepared.stageHistory = appendStageTransition([], prepared.status, prepared.createdAt);
         jobs.unshift(prepared);
         savedRecord = prepared;
       }
@@ -1173,6 +1235,8 @@
     replaceAllJobs,
     restoreSnapshot,
     sanitizeCustomAnswers,
+    sanitizeStageHistory,
+    appendStageTransition,
     captureCustomAnswer,
     captureCustomAnswers,
     normalizeCustomAnswerQuestion,

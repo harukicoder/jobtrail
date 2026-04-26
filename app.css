@@ -297,6 +297,34 @@ button, input, select, textarea {
   border-bottom: 1px solid var(--line);
 }
 
+/* Sortable header cells. The empty .sort-ind <span> is rendered to a tiny
+   triangle when the column is the active sort target, otherwise hidden so
+   non-active columns stay clean. */
+.jobs-table thead th.th-sortable {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  white-space: nowrap;
+}
+.jobs-table thead th.th-sortable:hover { color: var(--teal-900, #0f766e); }
+.jobs-table thead th .sort-ind {
+  display: inline-block;
+  margin-left: 6px;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 5px solid currentColor;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  vertical-align: middle;
+}
+.jobs-table thead th.is-sorted .sort-ind { opacity: 0.85; }
+.jobs-table thead th.sorted-desc .sort-ind {
+  border-bottom: 0;
+  border-top: 5px solid currentColor;
+}
+
 .jobs-table tbody td {
   padding: 10px 12px;
   border-bottom: 1px solid var(--line);
@@ -738,6 +766,66 @@ button, input, select, textarea {
   color: var(--text);
 }
 .prep-body[hidden] { display: none; }
+
+/* Status timeline — vertical list of stage transitions. The dots are colored
+   to match each stage's chip; the connector line is a CSS pseudo on the <ol>
+   so we don't need a separate DOM element per gap. */
+.timeline {
+  margin: 0;
+  padding: 4px 4px 4px 24px;
+  list-style: none;
+  position: relative;
+}
+.timeline::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: linear-gradient(180deg, var(--line-strong) 0%, var(--line) 100%);
+}
+.timeline-item {
+  position: relative;
+  padding: 4px 0 14px;
+}
+.timeline-item:last-child { padding-bottom: 4px; }
+.timeline-dot {
+  position: absolute;
+  left: -18px;
+  top: 6px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px var(--line-strong);
+}
+.timeline-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.timeline-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.timeline-dur {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.timeline-when {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.timeline-empty {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  font-style: italic;
+}
 .prep-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
