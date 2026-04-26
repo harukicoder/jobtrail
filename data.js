@@ -382,6 +382,19 @@
     return valid;
   }
 
+  // Seed history for legacy jobs (saved before stage tracking existed) so the
+  // timeline UI isn't empty for records that have an obvious initial state.
+  // Called from sanitizeJob — only fills when the input had no history at all.
+  function seedLegacyStageHistory(input, status, when) {
+    if (Array.isArray(input) && input.length > 0) return null;
+    if (!STATUS_META[status]) return null;
+    const at = String(when || "").trim();
+    if (!at) return null;
+    const t = new Date(at).getTime();
+    if (!Number.isFinite(t)) return null;
+    return [{ status, at }];
+  }
+
   // Append a transition to a history list iff the new status differs from the
   // most recent entry. Returns the (possibly unchanged) list. Pure — caller
   // assigns the result back onto the job.
@@ -420,7 +433,18 @@
     const interviewPrep = sanitizeInterviewPrep(input.interviewPrep);
     const aiCoverLetter = sanitizeAiCoverLetter(input.aiCoverLetter);
     const aiFitAnalysis = sanitizeAiFitAnalysis(input.aiFitAnalysis);
-    const stageHistory = sanitizeStageHistory(input.stageHistory);
+    let stageHistory = sanitizeStageHistory(input.stageHistory);
+    // Backfill: legacy records saved before stage tracking get a seed entry
+    // anchored to their createdAt timestamp so the timeline isn't empty for
+    // pre-existing jobs after this update lands.
+    if (stageHistory.length === 0) {
+      const seed = seedLegacyStageHistory(
+        input.stageHistory,
+        STATUS_META[input.status] ? input.status : "bookmarked",
+        input.createdAt || now
+      );
+      if (seed) stageHistory = seed;
+    }
     // Tombstone: when non-null, the job is a "this was deleted" marker that
     // we keep around so the deletion propagates through Drive sync. We filter
     // these out of UI reads (getAllJobs) and purge them after 30 days.

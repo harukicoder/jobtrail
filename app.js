@@ -769,11 +769,17 @@
     };
 
     const existing = payload.id && state.jobs.find((j) => j.id === payload.id);
-    const sanitized = data.sanitizeJob(
-      Object.assign({}, existing || {}, payload, {
-        createdAt: (existing && existing.createdAt) || undefined
-      })
+    const merged = Object.assign({}, existing || {}, payload, {
+      createdAt: (existing && existing.createdAt) || undefined
+    });
+    // Append a stage-history entry whenever the status actually changes so
+    // the timeline grows through normal webapp edits, not just extension saves.
+    merged.stageHistory = data.appendStageTransition(
+      (existing && existing.stageHistory) || merged.stageHistory || [],
+      merged.status,
+      new Date().toISOString()
     );
+    const sanitized = data.sanitizeJob(merged);
 
     if (existing) {
       state.jobs = state.jobs.map((j) => (j.id === sanitized.id ? sanitized : j));
