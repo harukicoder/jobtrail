@@ -242,19 +242,37 @@
     setSync("signed-in", "Synced");
   }
 
+  // While `saveInFlight` is true we suppress the visibility/focus pull that
+  // would otherwise read Drive (still showing the OLD state, since the PATCH
+  // hasn't landed) and overwrite our just-edited local state. Without this
+  // guard, switching tabs or losing focus mid-save reverts the UI from
+  // "applied" back to "bookmarked".
+  let saveInFlight = false;
+  // We also track save FAILURES so the visibility-pull doesn't silently
+  // overwrite a local edit that never made it to Drive. The user gets to
+  // retry. lastFailedSave is cleared on successful save or sign-out.
+  let lastSaveFailedAt = 0;
+  const FAILED_SAVE_GUARD_MS = 30000; // hold local edits for 30 s after a failed save
+
   async function saveToDrive() {
     setSync("syncing", "Saving…");
+    saveInFlight = true;
     try {
       await drive.writeData({
         jobs: state.jobs, // include tombstones so deletions propagate
         profile: state.profile,
         autofillMappings: state.autofillMappings
       });
+      lastSaveFailedAt = 0;
       setSync("signed-in", "Synced");
     } catch (err) {
-      console.error(err);
-      setSync("signed-in", "Save failed");
-      toast("Failed to save to Drive: " + err.message, { error: true });
+      console.error("saveToDrive failed:", err);
+      lastSaveFailedAt = Date.now();
+      setSync("signed-in", "Save failed — retry");
+      // Big visible toast — easy to miss the small sync pill text alone.
+      toast("Save failed: " + (err && err.message ? err.message : "network error") + " — your changes are still in this tab; click Save again.", { error: true });
+    } finally {
+      saveInFlight = false;
     }
   }
 
@@ -1001,8 +1019,23 @@
   let lastVisiblePullAt = 0;
   const VISIBLE_PULL_COOLDOWN_MS = 2000;
   let followupPullTimer = null;
+
+  // Don't pull-and-overwrite when:
+  //   - a save is currently in flight (it'd race and revert our just-edited
+  //     state back to Drive's old content),
+  //   - a save failed recently (the user's local edits are unsaved-but-real;
+  //     overwriting them with Drive's stale state silently loses the edit).
+  // The dashboard / extension still propagates eventually via sync — what we
+  // protect here is the user's in-tab edits.
+  function pullSuppressed() {
+    if (saveInFlight) return true;
+    if (lastSaveFailedAt && Date.now() - lastSaveFailedAt < FAILED_SAVE_GUARD_MS) return true;
+    return false;
+  }
+
   async function pullFromDriveIfDue() {
     if (!state.loaded) return;
+    if (pullSuppressed()) return;
     if (Date.now() - lastVisiblePullAt < VISIBLE_PULL_COOLDOWN_MS) return;
     lastVisiblePullAt = Date.now();
     try {
@@ -1017,6 +1050,7 @@
     followupPullTimer = setTimeout(async () => {
       followupPullTimer = null;
       if (!state.loaded) return;
+      if (pullSuppressed()) return;
       try {
         await loadFromDrive();
         renderJobs();
