@@ -1216,6 +1216,9 @@
   }
 
   globalScope.JobCRMData = {
+    // Internal escape hatch so callers (e.g. dashboard after a Drive pull)
+    // can force the next read to bypass the in-memory TTL cache.
+    _invalidateJobsCache: invalidateJobsCache,
     STORAGE_KEY,
     SNAPSHOT_KEY,
     PROFILE_KEY,
