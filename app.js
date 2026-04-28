@@ -3,8 +3,11 @@
 
   const data = window.JobCRMData;
   const drive = window.JobTrailDrive;
+  const driveAuth = window.JobTrailDriveAuth || null;
   const config = window.JOBTRAIL_CONFIG || {};
+  const runtime = window.JOBTRAIL_RUNTIME || {};
   const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+  const isExtensionRuntime = Boolean(runtime.isExtension && driveAuth);
 
   // In-memory dataset; Drive is the source of truth on disk.
   let state = {
@@ -106,9 +109,43 @@
       .replace(/'/g, "&#39;");
   }
 
+  async function mirrorStateToExtensionStorage() {
+    if (!isExtensionRuntime || !window.chrome || !chrome.storage || !chrome.storage.local) return;
+    try {
+      const nextJobs = Array.isArray(state.jobs) ? state.jobs : [];
+      const currentJobs = await data.getAllJobsIncludingTombstones();
+      if (JSON.stringify(currentJobs) !== JSON.stringify(nextJobs)) {
+        await data.replaceAllJobs(nextJobs);
+      }
+
+      if (state.profile) {
+        const currentProfile = await data.getProfile();
+        if (JSON.stringify(currentProfile) !== JSON.stringify(state.profile)) {
+          await data.saveProfile(state.profile);
+        }
+      }
+
+      const currentMappings = await new Promise((resolve) => {
+        chrome.storage.local.get(data.AUTOFILL_MAPPINGS_KEY, (res) => {
+          resolve((res && res[data.AUTOFILL_MAPPINGS_KEY]) || {});
+        });
+      });
+      if (JSON.stringify(currentMappings) === JSON.stringify(state.autofillMappings || {})) return;
+
+      await new Promise((resolve) => {
+        chrome.storage.local.set({
+          [data.AUTOFILL_MAPPINGS_KEY]: state.autofillMappings || {}
+        }, () => resolve());
+      });
+    } catch (err) {
+      console.warn("Extension storage mirror failed:", err);
+    }
+  }
+
   // ---------- OAuth via Google Identity Services ----------
 
   function hasValidClientId() {
+    if (isExtensionRuntime) return true;
     return typeof config.googleClientId === "string"
       && config.googleClientId.length > 0
       && !/REPLACE_WITH_YOUR_CLIENT_ID/i.test(config.googleClientId);
@@ -194,6 +231,9 @@
   }
 
   async function tokenProvider() {
+    if (isExtensionRuntime && driveAuth && typeof driveAuth.tokenProvider === "function") {
+      return driveAuth.tokenProvider();
+    }
     if (currentToken && Date.now() < tokenExpiry) return currentToken;
     // Cache may have been populated by attemptSilentRestore on boot.
     const cached = readCachedToken();
@@ -209,6 +249,13 @@
   }
 
   function clearToken() {
+    if (isExtensionRuntime) {
+      currentToken = null;
+      tokenExpiry = 0;
+      clearCachedToken();
+      drive.invalidateFileCache();
+      return;
+    }
     if (currentToken && window.google && google.accounts && google.accounts.oauth2) {
       try { google.accounts.oauth2.revoke(currentToken, () => {}); } catch (_) {}
     }
@@ -239,6 +286,7 @@
     state.profile = dataset.profile || null;
     state.autofillMappings = dataset.autofillMappings || {};
     state.loaded = true;
+    await mirrorStateToExtensionStorage();
     setSync("signed-in", "Synced");
   }
 
@@ -263,6 +311,7 @@
         profile: state.profile,
         autofillMappings: state.autofillMappings
       });
+      await mirrorStateToExtensionStorage();
       lastSaveFailedAt = 0;
       setSync("signed-in", "Synced");
     } catch (err) {
@@ -929,6 +978,26 @@
   // ---------- Sign in / out ----------
 
   async function signIn() {
+    if (isExtensionRuntime) {
+      signInBtn.disabled = true;
+      try {
+        const ok = await driveAuth.signIn();
+        if (!ok) {
+          toast("Sign-in cancelled", { error: true });
+          return;
+        }
+        try { localStorage.setItem(SIGNED_IN_FLAG, "1"); } catch (_) {}
+        showSignedIn();
+        await loadFromDrive();
+        renderJobs();
+      } catch (err) {
+        console.error(err);
+        toast("Sign-in failed: " + err.message, { error: true });
+      } finally {
+        signInBtn.disabled = false;
+      }
+      return;
+    }
     if (!hasValidClientId()) {
       configWarn.hidden = false;
       toast("Configure googleClientId in webapp/config.js first.", { error: true });
@@ -953,14 +1022,31 @@
     }
   }
 
-  function signOut() {
+  async function signOut() {
     try { localStorage.removeItem(SIGNED_IN_FLAG); } catch (_) {}
+    if (isExtensionRuntime) {
+      try { await driveAuth.signOut(); } catch (_) {}
+    }
     clearToken();
     state = { jobs: [], profile: null, autofillMappings: {}, loaded: false };
     showSignedOut();
   }
 
   async function attemptSilentRestore() {
+    if (isExtensionRuntime) {
+      try {
+        const signedIn = await driveAuth.isSignedIn();
+        if (!signedIn) return;
+        setSync("syncing", "Restoring session…");
+        showSignedIn();
+        await loadFromDrive();
+        renderJobs();
+      } catch (err) {
+        console.warn("Extension restore failed:", err);
+        setSync("", "Not signed in");
+      }
+      return;
+    }
     // On page load, if the user has signed in before on this device, try to
     // get a fresh token silently. Google will honor it as long as the user
     // hasn't revoked access and the browser still holds the consent cookie.
@@ -1100,11 +1186,11 @@
 
   // ---------- Boot ----------
 
-  drive.setTokenProvider(tokenProvider);
+  drive.setTokenProvider(isExtensionRuntime && driveAuth ? driveAuth.tokenProvider : tokenProvider);
   populateStatusSelects();
   showSignedOut();
 
-  if (!hasValidClientId()) {
+  if (!isExtensionRuntime && !hasValidClientId()) {
     configWarn.hidden = false;
   }
 

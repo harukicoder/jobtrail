@@ -349,8 +349,9 @@
 
     <div class="toast" id="toast" hidden></div>
 
-    <!-- Google Identity Services -->
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <!-- Runtime bootstrap injects GIS only for the hosted webapp.
+         In the Chrome extension we use chrome.identity instead. -->
+    <script src="runtime-env.js"></script>
 
     <!-- User config (Client ID). Falls back to example if missing. -->
     <script src="config.js" onerror="document.getElementById('config-warn').hidden = false;"></script>
@@ -358,6 +359,7 @@
     <!-- Shared libs -->
     <script src="data.js"></script>
     <script src="drive-sync.js"></script>
+    <script src="../drive-sync-extension.js" onerror="void 0"></script>
     <script src="ai.js"></script>
 
     <!-- Webapp entrypoint -->
