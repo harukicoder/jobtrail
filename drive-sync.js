@@ -1,12 +1,11 @@
 (function initJobTrailDrive(globalScope) {
   // Drive-backed storage for JobTrail. Token-agnostic — pass in a provider
-  // that returns a fresh OAuth access token (with drive.file scope) each call.
+  // that returns a fresh OAuth access token each call.
   // Works from the extension (chrome.identity.launchWebAuthFlow) and from the
   // webapp (Google Identity Services initTokenClient). No Google client code
   // is bundled here; callers do the auth handshake and hand us the token.
   //
-  // Layout: a single JSON file at Drive:/JobTrail/jobtrail-data.json, owned
-  // by the app's drive.file scope so it never sees the user's other files.
+  // Layout: a single JSON file at Drive:/JobTrail/jobtrail-data.json.
 
   const APP_FOLDER = "JobTrail";
   const DATA_FILE = "jobtrail-data.json";

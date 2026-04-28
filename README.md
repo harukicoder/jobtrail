@@ -2,7 +2,7 @@
 
 A static, single-user CRM that stores your data in **your own Google Drive**. Host it on GitHub Pages (or any static host) and it becomes the "Open CRM" target for the JobTrail Chrome extension.
 
-- **Storage:** one JSON file at `Drive:/JobTrail/jobtrail-data.json`, owned by this app via the `drive.file` OAuth scope. This app can only see files it creates — it cannot read anything else in your Drive.
+- **Storage:** one JSON file at `Drive:/JobTrail/jobtrail-data.json`.
 - **Auth:** Google Identity Services (in-browser OAuth). No backend, no Firebase, no server-side keys.
 - **Hosting:** static files only. Works on GitHub Pages, Netlify, Vercel, etc.
 
@@ -13,7 +13,7 @@ A static, single-user CRM that stores your data in **your own Google Drive**. Ho
 3. **APIs & Services → OAuth consent screen**:
    - User type: **External**.
    - Fill in required fields (app name, support email, developer contact).
-   - Scopes: add `https://www.googleapis.com/auth/drive.file`.
+   - Scopes: add `https://www.googleapis.com/auth/drive`.
    - Test users: add your own Google account (while the app is in "Testing" mode).
 4. **APIs & Services → Credentials → Create Credentials → OAuth client ID**:
    - Application type: **Web application**.
@@ -91,5 +91,5 @@ The webapp writes this file on every save. If you want a backup, use **Export JS
 
 ## Privacy
 
-- The `drive.file` scope means Google only exposes files this app has created to it. You can revoke access anytime at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
+- You can revoke access anytime at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
 - No telemetry. No server. The Client ID is public-by-design; it's pinned to your authorized origins so nobody else can hijack it from a different domain.

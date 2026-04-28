@@ -6,7 +6,7 @@
   const driveAuth = window.JobTrailDriveAuth || null;
   const config = window.JOBTRAIL_CONFIG || {};
   const runtime = window.JOBTRAIL_RUNTIME || {};
-  const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+  const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
   const isExtensionRuntime = Boolean(runtime.isExtension && driveAuth);
 
   // In-memory dataset; Drive is the source of truth on disk.
@@ -28,8 +28,7 @@
 
   const SIGNED_IN_FLAG = "jobtrail_was_signed_in_v1";
   // We cache the access token + expiry in localStorage so refreshes within
-  // the token TTL don't need any round-trip to Google. The token is scoped
-  // to drive.file (only files this app created) so the blast radius is tiny;
+  // the token TTL don't need any round-trip to Google.
   // GIS silent-refresh fails too often (third-party cookies / FedCM quirks)
   // to be the sole persistence mechanism. On expiry we fall back to silent
   // refresh, then to interactive sign-in.
@@ -1055,8 +1054,7 @@
     if (!flag || !hasValidClientId()) return;
 
     // Fast path: the previous session's token is still valid. Skip Google
-    // entirely — this is what makes refreshes feel instant. The token is
-    // scoped to drive.file so caching it locally has minimal blast radius.
+    // entirely — this is what makes refreshes feel instant.
     const cached = readCachedToken();
     if (cached) {
       currentToken = cached.token;
