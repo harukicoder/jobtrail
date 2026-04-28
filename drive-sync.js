@@ -15,6 +15,8 @@
   const FOLDER_MIME = "application/vnd.google-apps.folder";
   const JSON_MIME = "application/json";
   const SCHEMA_VERSION = 1;
+  const APP_PROPERTY_KEY = "jobtrailDataFile";
+  const APP_PROPERTY_VALUE = "primary";
 
   let tokenGetter = async () => null;
   let folderIdCache = null;
@@ -66,21 +68,65 @@
     return folderIdCache;
   }
 
-  async function findDataFileId() {
-    if (dataFileIdCache) return dataFileIdCache;
-    const folderId = await findFolderId();
-    const q = encodeURIComponent(
-      `name='${DATA_FILE}' and '${folderId}' in parents and trashed=false`
-    );
+  async function listFilesByQuery(query, fields, pageSize) {
+    const q = encodeURIComponent(query);
+    const reqFields = fields || "files(id,name,modifiedTime)";
+    const size = Number(pageSize) || 10;
     const resp = await driveFetch(
-      `${DRIVE_API}/files?q=${q}&spaces=drive&fields=files(id,name)&pageSize=5`
+      `${DRIVE_API}/files?q=${q}&spaces=drive&fields=${encodeURIComponent(reqFields)}&orderBy=modifiedTime desc&pageSize=${size}`
     );
     const json = await resp.json();
-    if (json.files && json.files.length > 0) {
-      dataFileIdCache = json.files[0].id;
+    return Array.isArray(json.files) ? json.files : [];
+  }
+
+  async function findTaggedDataFileId() {
+    const files = await listFilesByQuery(
+      `appProperties has { key='${APP_PROPERTY_KEY}' and value='${APP_PROPERTY_VALUE}' } and trashed=false`,
+      "files(id,name,modifiedTime)",
+      5
+    );
+    return files[0] ? files[0].id : null;
+  }
+
+  async function findLatestLegacyDataFileId() {
+    const files = await listFilesByQuery(
+      `name='${DATA_FILE}' and trashed=false`,
+      "files(id,name,modifiedTime,parents)",
+      20
+    );
+    return files[0] ? files[0].id : null;
+  }
+
+  async function findDataFileId() {
+    if (dataFileIdCache) return dataFileIdCache;
+    const taggedId = await findTaggedDataFileId().catch(() => null);
+    if (taggedId) {
+      dataFileIdCache = taggedId;
+      return dataFileIdCache;
+    }
+    const legacyId = await findLatestLegacyDataFileId().catch(() => null);
+    if (legacyId) {
+      dataFileIdCache = legacyId;
       return dataFileIdCache;
     }
     return null;
+  }
+
+  async function ensureFileTagged(fileId) {
+    if (!fileId) return;
+    try {
+      await driveFetch(`${DRIVE_API}/files/${fileId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appProperties: {
+            [APP_PROPERTY_KEY]: APP_PROPERTY_VALUE
+          }
+        })
+      });
+    } catch (_) {
+      // Best-effort only. Reads can still fall back to filename search.
+    }
   }
 
   function emptyDataset() {
@@ -142,6 +188,7 @@
     const existingId = await findDataFileId();
 
     if (existingId) {
+      await ensureFileTagged(existingId);
       await driveFetch(
         `${UPLOAD_API}/files/${existingId}?uploadType=media`,
         {
@@ -158,7 +205,14 @@
       .toString(36)
       .slice(2, 10)}`;
     const body = buildMultipartBody(
-      { name: DATA_FILE, parents: [folderId], mimeType: JSON_MIME },
+      {
+        name: DATA_FILE,
+        parents: [folderId],
+        mimeType: JSON_MIME,
+        appProperties: {
+          [APP_PROPERTY_KEY]: APP_PROPERTY_VALUE
+        }
+      },
       contentString,
       boundary
     );
