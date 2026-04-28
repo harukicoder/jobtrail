@@ -450,6 +450,10 @@
     // these out of UI reads (getAllJobs) and purge them after 30 days.
     const deletedAt = input.deletedAt ? String(input.deletedAt) : null;
 
+    const updatedAt = (input.updatedAt && !isNaN(new Date(input.updatedAt).getTime()))
+      ? input.updatedAt
+      : now;
+
     return {
       id: input.id || generateId(),
       jobTitle: String(input.jobTitle || input.title || "").trim(),
@@ -473,7 +477,7 @@
       aiFitAnalysis,
       stageHistory,
       createdAt: input.createdAt || now,
-      updatedAt: now,
+      updatedAt,
       deletedAt
     };
   }

@@ -808,6 +808,8 @@
     closeModal();
     renderJobs();
     await saveToDrive();
+    // Notify the extension content script (if present) that we just updated Drive.
+    window.postMessage({ type: "JOBTRAIL_SYNC_REQUEST" }, "*");
     toast("Saved");
   });
 
@@ -824,6 +826,8 @@
     closeModal();
     renderJobs();
     await saveToDrive();
+    // Notify the extension content script (if present) that we just updated Drive.
+    window.postMessage({ type: "JOBTRAIL_SYNC_REQUEST" }, "*");
     toast("Deleted");
   });
 
@@ -1370,6 +1374,8 @@
       state.profile = data.sanitizeProfile(state.profile);
       closeProfileModal();
       await saveToDrive();
+      // Notify the extension content script (if present) that we just updated Drive.
+      window.postMessage({ type: "JOBTRAIL_SYNC_REQUEST" }, "*");
       toast("Profile saved");
     });
   }
