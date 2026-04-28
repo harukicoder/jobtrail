@@ -6,7 +6,7 @@
   const driveAuth = window.JobTrailDriveAuth || null;
   const config = window.JOBTRAIL_CONFIG || {};
   const runtime = window.JOBTRAIL_RUNTIME || {};
-  const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
+  const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
   const isExtensionRuntime = Boolean(runtime.isExtension && driveAuth);
 
   // In-memory dataset; Drive is the source of truth on disk.
