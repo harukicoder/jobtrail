@@ -276,15 +276,70 @@
     $("stat-rejected").textContent = counts.rejected || 0;
   }
 
+  async function readExtensionDataset() {
+    return {
+      jobs: await data.getAllJobsIncludingTombstones(),
+      profile: await data.getProfile(),
+      autofillMappings: await data.getAutofillMappings()
+    };
+  }
+
+  function applyDatasetToState(dataset) {
+    const src = dataset && typeof dataset === "object" ? dataset : {};
+    state.jobs = (src.jobs || []).map((j) => data.sanitizeJob(j));
+    state.profile = src.profile || null;
+    state.autofillMappings = src.autofillMappings || {};
+    state.loaded = true;
+  }
+
+  async function loadFromExtensionStorage() {
+    const dataset = await readExtensionDataset();
+    applyDatasetToState(dataset);
+    return dataset;
+  }
+
   async function loadFromDrive() {
     setSync("syncing", "Loading…");
+    if (isExtensionRuntime) {
+      const [localDataset, remoteDataset] = await Promise.all([
+        readExtensionDataset(),
+        drive.readData()
+      ]);
+      const mergedDataset = {
+        jobs: data.mergeJobsByUpdatedAt(localDataset.jobs || [], remoteDataset.jobs || []),
+        profile: remoteDataset.profile || localDataset.profile || null,
+        autofillMappings: Object.assign(
+          {},
+          remoteDataset.autofillMappings || {},
+          localDataset.autofillMappings || {}
+        )
+      };
+      applyDatasetToState(mergedDataset);
+      await mirrorStateToExtensionStorage();
+      const remoteComparable = JSON.stringify({
+        jobs: (remoteDataset.jobs || []).map((j) => data.sanitizeJob(j)),
+        profile: remoteDataset.profile || null,
+        autofillMappings: remoteDataset.autofillMappings || {}
+      });
+      const mergedComparable = JSON.stringify({
+        jobs: state.jobs,
+        profile: state.profile,
+        autofillMappings: state.autofillMappings
+      });
+      if (remoteComparable !== mergedComparable) {
+        await drive.writeData({
+          jobs: state.jobs,
+          profile: state.profile,
+          autofillMappings: state.autofillMappings
+        });
+      }
+      setSync("signed-in", "Synced");
+      return;
+    }
     const dataset = await drive.readData();
     // Keep tombstones in state (we'll push them back to Drive on save, so they
     // continue to propagate) — but they're filtered out of every UI read.
-    state.jobs = (dataset.jobs || []).map((j) => data.sanitizeJob(j));
-    state.profile = dataset.profile || null;
-    state.autofillMappings = dataset.autofillMappings || {};
-    state.loaded = true;
+    applyDatasetToState(dataset);
     await mirrorStateToExtensionStorage();
     setSync("signed-in", "Synced");
   }
@@ -305,6 +360,15 @@
     setSync("syncing", "Saving…");
     saveInFlight = true;
     try {
+      if (isExtensionRuntime) {
+        await mirrorStateToExtensionStorage();
+        const signedIn = await driveAuth.isSignedIn();
+        if (!signedIn) {
+          lastSaveFailedAt = 0;
+          setSync("", "Local only");
+          return;
+        }
+      }
       await drive.writeData({
         jobs: state.jobs, // include tombstones so deletions propagate
         profile: state.profile,
@@ -1025,6 +1089,12 @@
     try { localStorage.removeItem(SIGNED_IN_FLAG); } catch (_) {}
     if (isExtensionRuntime) {
       try { await driveAuth.signOut(); } catch (_) {}
+      clearToken();
+      await loadFromExtensionStorage();
+      showExtensionLocalMode();
+      setSync("", "Local only");
+      renderJobs();
+      return;
     }
     clearToken();
     state = { jobs: [], profile: null, autofillMappings: {}, loaded: false };
@@ -1034,8 +1104,14 @@
   async function attemptSilentRestore() {
     if (isExtensionRuntime) {
       try {
+        await loadFromExtensionStorage();
+        showExtensionLocalMode();
+        renderJobs();
         const signedIn = await driveAuth.isSignedIn();
-        if (!signedIn) return;
+        if (!signedIn) {
+          setSync("", "Local only");
+          return;
+        }
         setSync("syncing", "Restoring session…");
         showSignedIn();
         await loadFromDrive();
@@ -1125,6 +1201,10 @@
   async function pullFromDriveIfDue() {
     if (!state.loaded) return;
     if (pullSuppressed()) return;
+    if (isExtensionRuntime) {
+      const signedIn = await driveAuth.isSignedIn();
+      if (!signedIn) return;
+    }
     if (Date.now() - lastVisiblePullAt < VISIBLE_PULL_COOLDOWN_MS) return;
     lastVisiblePullAt = Date.now();
     try {
@@ -1140,6 +1220,10 @@
       followupPullTimer = null;
       if (!state.loaded) return;
       if (pullSuppressed()) return;
+      if (isExtensionRuntime) {
+        const signedIn = await driveAuth.isSignedIn();
+        if (!signedIn) return;
+      }
       try {
         await loadFromDrive();
         renderJobs();
@@ -1157,6 +1241,21 @@
     if (document.hidden) return;
     pullFromDriveIfDue();
   }, BACKGROUND_PULL_INTERVAL_MS);
+  if (isExtensionRuntime && window.chrome && chrome.storage && chrome.storage.onChanged) {
+    let extensionReloadTimer = null;
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local" && area !== "sync") return;
+      if (!(changes[data.STORAGE_KEY] || changes[data.PROFILE_KEY] || changes[data.AUTOFILL_MAPPINGS_KEY])) return;
+      if (extensionReloadTimer) clearTimeout(extensionReloadTimer);
+      extensionReloadTimer = setTimeout(async () => {
+        extensionReloadTimer = null;
+        try {
+          await loadFromExtensionStorage();
+          renderJobs();
+        } catch (_) { /* ignore */ }
+      }, 120);
+    });
+  }
 
   function showSignedIn() {
     signedOutCard.hidden = true;
@@ -1164,6 +1263,18 @@
     if (viewTabs) viewTabs.hidden = false;
     signInBtn.hidden = true;
     signOutBtn.hidden = false;
+    if (profileBtn) profileBtn.hidden = false;
+    exportBtn.disabled = false;
+    importBtn.disabled = false;
+    setView(currentView);
+  }
+
+  function showExtensionLocalMode() {
+    signedOutCard.hidden = true;
+    statsRow.hidden = false;
+    if (viewTabs) viewTabs.hidden = false;
+    signInBtn.hidden = false;
+    signOutBtn.hidden = true;
     if (profileBtn) profileBtn.hidden = false;
     exportBtn.disabled = false;
     importBtn.disabled = false;
