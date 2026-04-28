@@ -1108,6 +1108,7 @@
   // get caught on this visit.
   let lastVisiblePullAt = 0;
   const VISIBLE_PULL_COOLDOWN_MS = 2000;
+  const BACKGROUND_PULL_INTERVAL_MS = 15000;
   let followupPullTimer = null;
 
   // Don't pull-and-overwrite when:
@@ -1154,6 +1155,10 @@
   }
   document.addEventListener("visibilitychange", onWebappActivate);
   window.addEventListener("focus", onWebappActivate);
+  window.setInterval(() => {
+    if (document.hidden) return;
+    pullFromDriveIfDue();
+  }, BACKGROUND_PULL_INTERVAL_MS);
 
   function showSignedIn() {
     signedOutCard.hidden = true;
