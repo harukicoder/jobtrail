@@ -1480,7 +1480,36 @@
     SECTION_PROFILE_INPUTS.forEach((key) => {
       $("profile-" + key).value = section[key] || "";
     });
+    renderResumeFileControl(section);
     renderSavedAnswers();
+  }
+
+  function renderResumeFileControl(section) {
+    const input = $("profile-resumeFile");
+    const label = $("profile-resumeFile-name");
+    const removeBtn = $("profile-resumeFile-remove");
+    if (input) input.value = "";
+    const file = section && section.resumeFile;
+    if (label) {
+      label.textContent = file && file.name
+        ? `${file.name}${file.size ? ` · ${Math.round(file.size / 1024)} KB` : ""}`
+        : "No file selected.";
+    }
+    if (removeBtn) removeBtn.disabled = !(file && file.name);
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({
+        name: file.name,
+        type: file.type || "application/octet-stream",
+        size: file.size || 0,
+        dataUrl: String(reader.result || "")
+      });
+      reader.onerror = () => reject(reader.error || new Error("Could not read file."));
+      reader.readAsDataURL(file);
+    });
   }
 
   // ---------- Saved answers (per-section custom Q&A library) ----------
@@ -1598,6 +1627,32 @@
       const rows = qaListEl.querySelectorAll(".qa-row");
       const last = rows[rows.length - 1];
       if (last) last.querySelector(".qa-question").focus();
+    });
+  }
+
+  const resumeFileInput = $("profile-resumeFile");
+  if (resumeFileInput) {
+    resumeFileInput.addEventListener("change", async () => {
+      const section = getEditingSection();
+      const file = resumeFileInput.files && resumeFileInput.files[0];
+      if (!section || !file) return;
+      try {
+        section.resumeFile = await readFileAsDataUrl(file);
+        renderResumeFileControl(section);
+        toast("CV file attached to this profile section");
+      } catch (error) {
+        toast(error && error.message ? error.message : "Could not attach CV file.", { error: true });
+      }
+    });
+  }
+
+  const resumeFileRemove = $("profile-resumeFile-remove");
+  if (resumeFileRemove) {
+    resumeFileRemove.addEventListener("click", () => {
+      const section = getEditingSection();
+      if (!section) return;
+      section.resumeFile = null;
+      renderResumeFileControl(section);
     });
   }
 

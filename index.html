@@ -298,6 +298,14 @@
               <label class="span-2"><span>CV / resume (plain text)</span>
                 <textarea id="profile-resumeText" rows="10" placeholder="Paste your CV here. Used by AI cover-letter generation and autofill."></textarea>
               </label>
+              <div class="span-2 resume-file-control">
+                <span>CV file for application uploads</span>
+                <div class="resume-file-row">
+                  <input id="profile-resumeFile" type="file" accept=".pdf,.doc,.docx,.rtf,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+                  <button class="ghost-button" id="profile-resumeFile-remove" type="button">Remove file</button>
+                </div>
+                <p class="resume-file-name" id="profile-resumeFile-name">No file selected.</p>
+              </div>
               <label class="span-2"><span>Cover-letter template</span>
                 <textarea id="profile-coverLetter" rows="6" placeholder="Dear {company} hiring team,&#10;&#10;I'm excited to apply for the {role} role. ...&#10;&#10;Placeholders: {company}, {role}, {jobTitle}, {location}"></textarea>
               </label>

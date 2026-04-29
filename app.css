@@ -996,9 +996,26 @@ button, input, select, textarea {
 }
 .profile-group .form-grid textarea { resize: vertical; }
 
+.resume-file-control {
+  display: grid;
+  gap: 6px;
+}
+.resume-file-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.resume-file-name {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 @media (max-width: 620px) {
   .profile-group .form-grid { grid-template-columns: 1fr; }
   .profile-group .form-grid .span-2 { grid-column: span 1; }
+  .resume-file-row { grid-template-columns: 1fr; }
 }
 
 /* Saved-answers list — same shape as the extension dashboard, with a search
