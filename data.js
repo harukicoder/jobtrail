@@ -322,7 +322,7 @@
     anthropic: "claude-sonnet-4-5",
     openai: "gpt-4o-mini",
     gemini: "gemini-1.5-flash-latest",
-    deepseek: "deepseek-chat",
+    deepseek: "deepseek-v4-flash",
     "on-device": "",
     none: ""
   };
@@ -332,10 +332,14 @@
     const provider = AI_PROVIDERS.indexOf(String(src.provider || "")) >= 0
       ? src.provider
       : "none";
+    let model = String(src.model || AI_DEFAULT_MODEL[provider] || "").slice(0, 80);
+    if (provider === "deepseek" && (!model || model === "deepseek-chat")) {
+      model = AI_DEFAULT_MODEL.deepseek;
+    }
     return {
       provider,
       apiKey: String(src.apiKey || "").slice(0, 512),
-      model: String(src.model || AI_DEFAULT_MODEL[provider] || "").slice(0, 80)
+      model
     };
   }
 
@@ -893,9 +897,10 @@
     return input
       .map((entry) => {
         if (!entry || typeof entry !== "object") return null;
-        const question = String(entry.question || "").trim();
+        const question = cleanCustomAnswerQuestion(entry.question);
         const answer = String(entry.answer || "").trim();
         if (!question || !answer) return null;
+        if (isNoisyCustomAnswerQuestion(question, answer)) return null;
         // `source` distinguishes manually-typed answers from those auto-captured
         // during autofill — used by the saved-answers UI to flag and let the
         // user confirm/edit captured rows. `capturedAt` is ISO when source=captured.
@@ -1090,13 +1095,51 @@
 
   // Normalize a form question for dedupe: drop trailing required markers, punctuation.
   function normalizeCustomAnswerQuestion(q) {
-    return String(q || "")
+    return cleanCustomAnswerQuestion(q)
       .replace(/\*+\s*$/, "")
       .replace(/\s*\(?\s*required\s*\)?\s*$/i, "")
       .replace(/[\s:：?？]+$/g, "")
       .replace(/\s+/g, " ")
       .trim()
       .toLowerCase();
+  }
+
+  function cleanCustomAnswerQuestion(q) {
+    return String(q || "")
+      .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/ig, " ")
+      .replace(/[0-9a-f]{5,}-[0-9a-f-]{8,}/ig, " ")
+      .replace(/\b[0-9a-f]{20,}\b/ig, " ")
+      .replace(/\b[a-z0-9]{8,}_[a-z0-9_-]{8,}\b/ig, " ")
+      .replace(/_?systemfield_?/ig, " ")
+      .replace(/\btype here(?:\.\.\.)?\b/ig, " ")
+      .replace(/\.{2,}/g, " ")
+      .replace(/\b(?:input|field|control|button|select)\b(?:\s+\1\b)+/ig, "$1")
+      .replace(/\s+/g, " ")
+      .replace(/^[\s:：?？.,;|-]+|[\s:：?？.,;|-]+$/g, "")
+      .trim();
+  }
+
+  function isNoisyCustomAnswerQuestion(question, answer) {
+    const q = String(question || "").trim();
+    const a = String(answer || "").trim();
+    if (!q || q.length < 4) return true;
+    if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(q)) return true;
+    if (/_?systemfield_?|type here/i.test(q)) return true;
+    if (/^(name|full name|first name|last name|email|phone|telephone|mobile|city|country|location)$/i.test(q)) return true;
+    if (/^(name\s*)+$/i.test(q)) return true;
+    if (normalizeQuestionForNoise(q) && normalizeQuestionForNoise(q) === normalizeQuestionForNoise(a)) return true;
+    const words = q.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    const usefulShortQuestion = /\b(salary|compensation|pay|ote|sponsor|sponsorship|visa|permit|authori[sz]ation|eligible|work|start|notice|availability|remote|hybrid|relocat|commut|language|country|location)\b/i.test(q);
+    if (words.length <= 2 && !/[?]/.test(q) && q.length < 24 && !usefulShortQuestion) return true;
+    return false;
+  }
+
+  function normalizeQuestionForNoise(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   // Batched form of captureCustomAnswer: takes an array of {question, answer}
@@ -1118,10 +1161,11 @@
     const existingNorms = new Set(existing.map((e) => normalizeCustomAnswerQuestion(e.question)));
     const additions = [];
     for (const item of list) {
-      const q = String((item && item.question) || "").trim();
+      const q = cleanCustomAnswerQuestion((item && item.question) || "");
       const a = String((item && item.answer) || "").trim();
       if (!q || !a) continue;
       if (q.length < 4 || a.length > 2000) continue;
+      if (isNoisyCustomAnswerQuestion(q, a)) continue;
       const norm = normalizeCustomAnswerQuestion(q);
       if (existingNorms.has(norm)) continue;
       existingNorms.add(norm);
@@ -1145,10 +1189,11 @@
   // De-dupes against existing answers (case-insensitive, punctuation-insensitive).
   // Returns { added: true|false, reason? } so callers can show feedback.
   async function captureCustomAnswer(question, answer) {
-    const q = String(question || "").trim();
+    const q = cleanCustomAnswerQuestion(question);
     const a = String(answer || "").trim();
     if (!q || !a) return { added: false, reason: "empty" };
     if (q.length < 4) return { added: false, reason: "too-short" };
+    if (isNoisyCustomAnswerQuestion(q, a)) return { added: false, reason: "noisy-question" };
     // Sanity cap so we don't persist essay answers or runaway HTML payloads.
     if (a.length > 2000) return { added: false, reason: "too-long" };
 

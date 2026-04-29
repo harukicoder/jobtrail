@@ -1661,7 +1661,8 @@
       const defaultModel = data.AI_DEFAULT_MODEL[provider] || "";
       // Only overwrite if the user hasn't set a custom one for this provider.
       const current = ($("profile-ai-model").value || "").trim();
-      const anyDefault = Object.values(data.AI_DEFAULT_MODEL).includes(current);
+      const legacyDefaults = ["deepseek-chat"];
+      const anyDefault = Object.values(data.AI_DEFAULT_MODEL).includes(current) || legacyDefaults.includes(current);
       if (!current || anyDefault) $("profile-ai-model").value = defaultModel;
     });
   }

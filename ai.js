@@ -127,8 +127,9 @@
     // function rather than reusing generateOpenAI so the error prefix makes
     // failures easy to attribute in logs.
     const { system, user, apiKey, model, onChunk, responseFormat } = opts;
+    const chosenModel = (!model || model === "deepseek-chat") ? "deepseek-v4-flash" : model;
     const body = {
-      model: model || "deepseek-chat",
+      model: chosenModel,
       stream: true,
       messages: [
         { role: "system", content: system },
