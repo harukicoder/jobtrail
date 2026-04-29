@@ -1474,6 +1474,25 @@
     });
   }
 
+  function syncSavedAnswersFromDom() {
+    if (!qaListEl) return;
+    const section = getEditingSection();
+    if (!section || !Array.isArray(section.customAnswers)) return;
+    qaListEl.querySelectorAll(".qa-row").forEach((row) => {
+      const id = row.dataset.qaId;
+      const qa = section.customAnswers.find((item) => item.id === id);
+      if (!qa) return;
+      const qInput = row.querySelector(".qa-question");
+      const aInput = row.querySelector(".qa-answer");
+      qa.question = qInput ? qInput.value : qa.question;
+      qa.answer = aInput ? aInput.value : qa.answer;
+      if (qa.source === "captured") {
+        qa.source = "manual";
+        qa.capturedAt = "";
+      }
+    });
+  }
+
   function writeSectionFieldsFromState() {
     const p = ensureProfileLoaded();
     const section = p.sections.find((s) => s.id === editingSectionId) || p.sections[0];
@@ -1631,16 +1650,20 @@
   }
 
   const resumeFileInput = $("profile-resumeFile");
+  let resumeFileReadPromise = null;
   if (resumeFileInput) {
     resumeFileInput.addEventListener("change", async () => {
       const section = getEditingSection();
       const file = resumeFileInput.files && resumeFileInput.files[0];
       if (!section || !file) return;
       try {
-        section.resumeFile = await readFileAsDataUrl(file);
+        resumeFileReadPromise = readFileAsDataUrl(file);
+        section.resumeFile = await resumeFileReadPromise;
+        resumeFileReadPromise = null;
         renderResumeFileControl(section);
         toast("CV file attached to this profile section");
       } catch (error) {
+        resumeFileReadPromise = null;
         toast(error && error.message ? error.message : "Could not attach CV file.", { error: true });
       }
     });
@@ -1725,6 +1748,10 @@
   if (profileForm) {
     profileForm.addEventListener("submit", async (e) => {
       e.preventDefault();
+      if (resumeFileReadPromise) {
+        try { await resumeFileReadPromise; } catch (_) { /* surfaced in change handler */ }
+      }
+      syncSavedAnswersFromDom();
       readProfileFormIntoState();
       state.profile = data.sanitizeProfile(state.profile);
       closeProfileModal();
