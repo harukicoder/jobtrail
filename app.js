@@ -1427,7 +1427,7 @@
   ];
   const SECTION_PROFILE_INPUTS = [
     "yearsExperience", "desiredSalary", "workAuthorization",
-    "noticePeriod", "preferredStartDate", "resumeText", "coverLetter"
+    "noticePeriod", "preferredStartDate", "resumeText"
   ];
 
   function ensureProfileLoaded() {
