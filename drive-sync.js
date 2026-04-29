@@ -16,6 +16,7 @@
   const SCHEMA_VERSION = 1;
   const APP_PROPERTY_KEY = "jobtrailDataFile";
   const APP_PROPERTY_VALUE = "primary";
+  const DRIVE_FETCH_TIMEOUT_MS = 20000;
 
   let tokenGetter = async () => null;
   let folderIdCache = null;
@@ -34,9 +35,27 @@
     return { Authorization: `Bearer ${token}` };
   }
 
+  async function fetchWithTimeout(url, init) {
+    if (typeof AbortController === "undefined") {
+      return fetch(url, init);
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DRIVE_FETCH_TIMEOUT_MS);
+    try {
+      return await fetch(url, Object.assign({}, init || {}, { signal: controller.signal }));
+    } catch (err) {
+      if (err && err.name === "AbortError") {
+        throw new Error("Drive request timed out. Check your connection and try again.");
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async function driveFetch(url, init) {
     const headers = Object.assign({}, (init && init.headers) || {}, await authHeader());
-    const resp = await fetch(url, Object.assign({}, init || {}, { headers }));
+    const resp = await fetchWithTimeout(url, Object.assign({}, init || {}, { headers }));
     if (!resp.ok) {
       const body = await resp.text().catch(() => "");
       throw new Error(`Drive ${resp.status}: ${body.slice(0, 200)}`);
