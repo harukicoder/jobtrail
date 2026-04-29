@@ -6,7 +6,10 @@
   const driveAuth = window.JobTrailDriveAuth || null;
   const config = window.JOBTRAIL_CONFIG || {};
   const runtime = window.JOBTRAIL_RUNTIME || {};
-  const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+  // Full Drive scope is intentional here: the webapp and Chrome extension use
+  // different OAuth client IDs, so `drive.file` can strand them on separate
+  // app-private copies of JobTrail/jobtrail-data.json.
+  const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
   const isExtensionRuntime = Boolean(runtime.isExtension && driveAuth);
 
   // In-memory dataset; Drive is the source of truth on disk.
@@ -32,7 +35,7 @@
   // GIS silent-refresh fails too often (third-party cookies / FedCM quirks)
   // to be the sole persistence mechanism. On expiry we fall back to silent
   // refresh, then to interactive sign-in.
-  const TOKEN_CACHE_KEY = "jobtrail_oauth_token_v1";
+  const TOKEN_CACHE_KEY = "jobtrail_oauth_token_v2";
 
   function readCachedToken() {
     try {
@@ -42,11 +45,12 @@
       if (!parsed || typeof parsed !== "object") return null;
       if (typeof parsed.token !== "string" || !parsed.token) return null;
       if (typeof parsed.expiry !== "number" || Date.now() >= parsed.expiry) return null;
+      if (parsed.scope !== DRIVE_SCOPE) return null;
       return parsed;
     } catch (_) { return null; }
   }
   function writeCachedToken(token, expiry) {
-    try { localStorage.setItem(TOKEN_CACHE_KEY, JSON.stringify({ token, expiry })); } catch (_) {}
+    try { localStorage.setItem(TOKEN_CACHE_KEY, JSON.stringify({ token, expiry, scope: DRIVE_SCOPE })); } catch (_) {}
   }
   function clearCachedToken() {
     try { localStorage.removeItem(TOKEN_CACHE_KEY); } catch (_) {}
@@ -366,7 +370,7 @@
         if (!signedIn) {
           lastSaveFailedAt = 0;
           setSync("", "Local only");
-          return;
+          return { ok: true, localOnly: true };
         }
       }
       await drive.writeData({
@@ -377,12 +381,14 @@
       await mirrorStateToExtensionStorage();
       lastSaveFailedAt = 0;
       setSync("signed-in", "Synced");
+      return { ok: true, localOnly: false };
     } catch (err) {
       console.error("saveToDrive failed:", err);
       lastSaveFailedAt = Date.now();
       setSync("signed-in", "Save failed — retry");
       // Big visible toast — easy to miss the small sync pill text alone.
       toast("Save failed: " + (err && err.message ? err.message : "network error") + " — your changes are still in this tab; click Save again.", { error: true });
+      return { ok: false, error: err };
     } finally {
       saveInFlight = false;
     }
@@ -899,15 +905,17 @@
     };
 
     const existing = payload.id && state.jobs.find((j) => j.id === payload.id);
+    const nowIso = new Date().toISOString();
     const merged = Object.assign({}, existing || {}, payload, {
-      createdAt: (existing && existing.createdAt) || undefined
+      createdAt: (existing && existing.createdAt) || undefined,
+      updatedAt: nowIso
     });
     // Append a stage-history entry whenever the status actually changes so
     // the timeline grows through normal webapp edits, not just extension saves.
     merged.stageHistory = data.appendStageTransition(
       (existing && existing.stageHistory) || merged.stageHistory || [],
       merged.status,
-      new Date().toISOString()
+      nowIso
     );
     const sanitized = data.sanitizeJob(merged);
 
@@ -919,10 +927,11 @@
 
     closeModal();
     renderJobs();
-    await saveToDrive();
+    const saveResult = await saveToDrive();
+    if (!saveResult.ok) return;
     // Notify the extension content script (if present) that we just updated Drive.
     window.postMessage({ type: "JOBTRAIL_SYNC_REQUEST" }, "*");
-    toast("Saved");
+    toast(saveResult.localOnly ? "Saved locally" : "Saved");
   });
 
   jobDeleteBtn.addEventListener("click", async () => {
@@ -937,10 +946,11 @@
     );
     closeModal();
     renderJobs();
-    await saveToDrive();
+    const saveResult = await saveToDrive();
+    if (!saveResult.ok) return;
     // Notify the extension content script (if present) that we just updated Drive.
     window.postMessage({ type: "JOBTRAIL_SYNC_REQUEST" }, "*");
-    toast("Deleted");
+    toast(saveResult.localOnly ? "Deleted locally" : "Deleted");
   });
 
   function openJobForEdit(id) {
@@ -1030,7 +1040,8 @@
       }
 
       renderJobs();
-      await saveToDrive();
+      const saveResult = await saveToDrive();
+      if (!saveResult.ok) return;
       toast(`Imported ${incoming.length} job${incoming.length === 1 ? "" : "s"}`);
     } catch (err) {
       console.error(err);
@@ -1573,10 +1584,11 @@
       readProfileFormIntoState();
       state.profile = data.sanitizeProfile(state.profile);
       closeProfileModal();
-      await saveToDrive();
+      const saveResult = await saveToDrive();
+      if (!saveResult.ok) return;
       // Notify the extension content script (if present) that we just updated Drive.
       window.postMessage({ type: "JOBTRAIL_SYNC_REQUEST" }, "*");
-      toast("Profile saved");
+      toast(saveResult.localOnly ? "Profile saved locally" : "Profile saved");
     });
   }
 
