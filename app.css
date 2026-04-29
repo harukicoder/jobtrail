@@ -499,6 +499,19 @@ button, input, select, textarea {
   font-size: 12px;
 }
 
+.row-delete-button {
+  border: 1px solid rgba(244, 63, 94, 0.18);
+  border-radius: 8px;
+  background: #ffe4e6;
+  color: #b1172c;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.row-delete-button:hover { background: #fecaca; }
+
 /* Modal */
 .modal {
   position: fixed;

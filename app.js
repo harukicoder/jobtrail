@@ -562,6 +562,7 @@
           <td>
             <div class="row-actions">
               <button class="primary-button" data-action="edit" data-id="${escapeHtml(j.id)}">Edit</button>
+              <button class="row-delete-button" data-action="delete" data-id="${escapeHtml(j.id)}" data-stop-row>Delete</button>
             </div>
           </td>
         </tr>
@@ -993,23 +994,38 @@
     toast(saveResult.localOnly ? "Saved locally" : "Saved");
   });
 
-  jobDeleteBtn.addEventListener("click", async () => {
-    const id = $("field-id").value;
+  function persistDeletionToDrive(label) {
+    saveToDrive()
+      .then((saveResult) => {
+        if (!saveResult.ok) return;
+        window.postMessage({ type: "JOBTRAIL_SYNC_REQUEST" }, "*");
+        toast(saveResult.localOnly ? `${label} locally` : label);
+      })
+      .catch((err) => {
+        console.error("Delete sync failed:", err);
+        toast("Delete saved locally, but Drive sync failed. Try Sync.", { error: true });
+      });
+  }
+
+  function deleteJobById(id) {
     if (!id) return;
-    if (!confirm("Delete this job? This can't be undone.")) return;
+    const job = state.jobs.find((j) => j.id === id);
+    const label = job && job.jobTitle ? ` "${job.jobTitle}"` : " this job";
+    if (!confirm(`Delete${label}?`)) return;
     // Soft delete: mark tombstone so the deletion propagates to the extension
     // via Drive sync. Tombstones are purged after 30 days.
     const now = new Date().toISOString();
     state.jobs = state.jobs.map((j) =>
       j.id === id ? Object.assign({}, j, { deletedAt: now, updatedAt: now }) : j
     );
-    closeModal();
+    if ($("field-id").value === id) closeModal();
     renderJobs();
-    const saveResult = await saveToDrive();
-    if (!saveResult.ok) return;
-    // Notify the extension content script (if present) that we just updated Drive.
-    window.postMessage({ type: "JOBTRAIL_SYNC_REQUEST" }, "*");
-    toast(saveResult.localOnly ? "Deleted locally" : "Deleted");
+    toast("Deleted");
+    persistDeletionToDrive("Deleted");
+  }
+
+  jobDeleteBtn.addEventListener("click", () => {
+    deleteJobById($("field-id").value);
   });
 
   function openJobForEdit(id) {
@@ -1018,6 +1034,11 @@
   }
 
   jobsTbody.addEventListener("click", (e) => {
+    const deleteTarget = e.target.closest("[data-action='delete']");
+    if (deleteTarget) {
+      deleteJobById(deleteTarget.dataset.id);
+      return;
+    }
     // Don't hijack clicks on the "Open" link inside the row — that should
     // navigate to the job posting in a new tab, not open the edit modal.
     if (e.target.closest("[data-stop-row]")) return;
