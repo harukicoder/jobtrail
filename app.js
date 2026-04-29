@@ -75,6 +75,7 @@
   const jobsTbody = $("jobs-tbody");
   const jobsSearch = $("jobs-search");
   const jobsFilterStatus = $("jobs-filter-status");
+  const jobTypeTabs = $("job-type-tabs");
   const addJobBtn = $("add-job-button");
   const jobModal = $("job-modal");
   const jobForm = $("job-form");
@@ -410,6 +411,13 @@
   // refreshes. `dateApplied` desc is the sensible default — most-recent first.
   const SORT_PREF_KEY = "jobtrail_sort_pref_v1";
   const SORT_ORDER = ["bookmarked", "applying", "applied", "interviewing", "offer", "rejected", "archived"];
+  const TYPE_FILTERS = [
+    { id: "all", label: "All" },
+    { id: "full-time", label: "Full-time" },
+    { id: "part-time", label: "Part-time" },
+    { id: "contract", label: "Contract" }
+  ];
+  let activeTypeFilter = "all";
   const sortState = (() => {
     try {
       const raw = localStorage.getItem(SORT_PREF_KEY);
@@ -427,6 +435,46 @@
     try { localStorage.setItem(SORT_PREF_KEY, JSON.stringify(sortState)); } catch (_) {}
   }
 
+  function timeValue(value) {
+    const stamp = value ? new Date(value).getTime() : 0;
+    return Number.isFinite(stamp) ? stamp : 0;
+  }
+
+  function latestJobActivity(job) {
+    return Math.max(
+      timeValue(job && job.updatedAt),
+      timeValue(job && job.createdAt),
+      timeValue(job && job.dateApplied)
+    );
+  }
+
+  function typeBucket(job) {
+    const value = String((job && job.jobType) || "").trim().toLowerCase();
+    if (!value) return "";
+    if (value.includes("part")) return "part-time";
+    if (value.includes("full")) return "full-time";
+    if (value.includes("contract") || value.includes("freelance") || value.includes("temporary")) {
+      return "contract";
+    }
+    return value.replace(/\s+/g, "-");
+  }
+
+  function renderTypeTabs() {
+    if (!jobTypeTabs) return;
+    const live = liveJobs();
+    jobTypeTabs.innerHTML = TYPE_FILTERS.map((filter) => {
+      const count = filter.id === "all"
+        ? live.length
+        : live.filter((job) => typeBucket(job) === filter.id).length;
+      return `
+        <button type="button" class="type-tab ${activeTypeFilter === filter.id ? "is-active" : ""}" data-type-filter="${escapeHtml(filter.id)}">
+          <span>${escapeHtml(filter.label)}</span>
+          <span class="type-tab-count">${count}</span>
+        </button>
+      `;
+    }).join("");
+  }
+
   function compareJobs(a, b, key, dir) {
     const mul = dir === "asc" ? 1 : -1;
     if (key === "status") {
@@ -437,10 +485,18 @@
       // Empty dates sort last regardless of direction so blank rows don't leap
       // to the top of an ascending sort.
       const av = a.dateApplied || ""; const bv = b.dateApplied || "";
-      if (!av && !bv) return 0;
+      if (!av && !bv) {
+        const activityCmp = latestJobActivity(a) - latestJobActivity(b);
+        if (activityCmp) return mul * activityCmp;
+        return String(a.id || "").localeCompare(String(b.id || ""));
+      }
       if (!av) return 1;
       if (!bv) return -1;
-      return mul * (av < bv ? -1 : av > bv ? 1 : 0);
+      const dateCmp = av < bv ? -1 : av > bv ? 1 : 0;
+      if (dateCmp) return mul * dateCmp;
+      const activityCmp = latestJobActivity(a) - latestJobActivity(b);
+      if (activityCmp) return mul * activityCmp;
+      return String(a.id || "").localeCompare(String(b.id || ""));
     }
     const av = String((a[key] || "")).toLowerCase();
     const bv = String((b[key] || "")).toLowerCase();
@@ -464,8 +520,9 @@
     const status = jobsFilterStatus.value;
     const list = liveJobs().filter((j) => {
       if (status && j.status !== status) return false;
+      if (activeTypeFilter !== "all" && typeBucket(j) !== activeTypeFilter) return false;
       if (!q) return true;
-      const hay = [j.jobTitle, j.company, j.location, j.notes].join(" ").toLowerCase();
+      const hay = [j.jobTitle, j.company, j.location, j.workMode, j.jobType, j.notes].join(" ").toLowerCase();
       return hay.indexOf(q) !== -1;
     });
     return list.sort((a, b) => compareJobs(a, b, sortState.key, sortState.dir));
@@ -473,6 +530,7 @@
 
   function renderJobs() {
     const jobs = filteredJobs();
+    renderTypeTabs();
     jobsEmpty.hidden = jobs.length !== 0;
     jobsTbody.innerHTML = jobs.map((j) => {
       const urlLink = j.url
@@ -498,6 +556,7 @@
           <td>${escapeHtml(j.company || "")}</td>
           <td>${escapeHtml(j.location || "")}</td>
           <td>${j.workMode ? escapeHtml(j.workMode) : '<span class="cell-muted">—</span>'}</td>
+          <td>${j.jobType ? escapeHtml(j.jobType) : '<span class="cell-muted">—</span>'}</td>
           <td>${statusChip(j.status)}</td>
           <td>${escapeHtml(j.dateApplied || "")}</td>
           <td>
@@ -989,6 +1048,14 @@
 
   jobsSearch.addEventListener("input", () => renderJobs());
   jobsFilterStatus.addEventListener("change", () => renderJobs());
+  if (jobTypeTabs) {
+    jobTypeTabs.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-type-filter]");
+      if (!btn) return;
+      activeTypeFilter = btn.dataset.typeFilter || "all";
+      renderJobs();
+    });
+  }
   addJobBtn.addEventListener("click", () => openModal(null));
 
   // ---------- Export / Import ----------

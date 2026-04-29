@@ -271,6 +271,57 @@ button, input, select, textarea {
 
 .jobs-head-actions input[type="search"] { min-width: 220px; }
 
+.job-type-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  margin-bottom: 12px;
+}
+
+.type-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: #fff;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.type-tab:hover {
+  border-color: var(--teal-500);
+  background: var(--teal-50);
+  color: var(--teal-900);
+}
+
+.type-tab.is-active {
+  border-color: var(--teal-600);
+  background: var(--teal-600);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(13, 122, 116, 0.18);
+}
+
+.type-tab-count {
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+  color: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.type-tab.is-active .type-tab-count { background: rgba(255, 255, 255, 0.25); }
+
 .jobs-empty {
   text-align: center;
   padding: 30px 10px;
