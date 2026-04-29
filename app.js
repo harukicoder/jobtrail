@@ -1999,9 +1999,11 @@
   // don't support SWs. Failures are silent; the app still works without one.
   if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("sw.js").catch((err) => {
-        console.warn("Service worker registration failed:", err);
-      });
+      navigator.serviceWorker.register("sw.js")
+        .then((registration) => registration.update().catch(() => undefined))
+        .catch((err) => {
+          console.warn("Service worker registration failed:", err);
+        });
     });
   }
 
