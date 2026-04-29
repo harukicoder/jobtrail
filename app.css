@@ -299,12 +299,12 @@ button, input, select, textarea {
 .type-tab:hover {
   border-color: var(--teal-500);
   background: var(--teal-50);
-  color: var(--teal-900);
+  color: var(--teal-800);
 }
 
 .type-tab.is-active {
-  border-color: var(--teal-600);
-  background: var(--teal-600);
+  border-color: var(--teal-700);
+  background: var(--teal-700);
   color: #fff;
   box-shadow: 0 3px 10px rgba(13, 122, 116, 0.18);
 }

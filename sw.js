@@ -7,7 +7,7 @@
 // working UI offline.
 
 // Bump this whenever the shell changes so browsers drop the old cache.
-const CACHE_NAME = "jobtrail-shell-v21";
+const CACHE_NAME = "jobtrail-shell-v22";
 const SHELL_URLS = [
   "./",
   "./index.html",
