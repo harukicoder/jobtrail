@@ -1423,7 +1423,8 @@
 
   const COMMON_PROFILE_INPUTS = [
     "firstName", "lastName", "email", "phone",
-    "city", "country", "linkedinUrl", "githubUrl", "portfolioUrl"
+    "city", "country", "currentCompany", "currentTitle",
+    "linkedinUrl", "githubUrl", "portfolioUrl"
   ];
   const SECTION_PROFILE_INPUTS = [
     "yearsExperience", "desiredSalary", "workAuthorization",
@@ -1511,8 +1512,9 @@
     const file = section && section.resumeFile;
     if (label) {
       label.textContent = file && file.name
-        ? `${file.name}${file.size ? ` · ${Math.round(file.size / 1024)} KB` : ""}`
+        ? `Stored CV: ${file.name}${file.size ? ` · ${Math.round(file.size / 1024)} KB` : ""}`
         : "No file selected.";
+      label.classList.toggle("has-file", !!(file && file.name));
     }
     if (removeBtn) removeBtn.disabled = !(file && file.name);
   }
@@ -1657,9 +1659,10 @@
       const file = resumeFileInput.files && resumeFileInput.files[0];
       if (!section || !file) return;
       try {
-        resumeFileReadPromise = readFileAsDataUrl(file);
-        section.resumeFile = await resumeFileReadPromise;
-        resumeFileReadPromise = null;
+        const pendingRead = readFileAsDataUrl(file);
+        resumeFileReadPromise = pendingRead;
+        section.resumeFile = await pendingRead;
+        if (resumeFileReadPromise === pendingRead) resumeFileReadPromise = null;
         renderResumeFileControl(section);
         toast("CV file attached to this profile section");
       } catch (error) {
@@ -1749,7 +1752,15 @@
     profileForm.addEventListener("submit", async (e) => {
       e.preventDefault();
       if (resumeFileReadPromise) {
-        try { await resumeFileReadPromise; } catch (_) { /* surfaced in change handler */ }
+        try {
+          const fileInfo = await resumeFileReadPromise;
+          const section = getEditingSection();
+          if (section && fileInfo) {
+            section.resumeFile = fileInfo;
+            renderResumeFileControl(section);
+          }
+        } catch (_) { /* surfaced in change handler */ }
+        resumeFileReadPromise = null;
       }
       syncSavedAnswersFromDom();
       readProfileFormIntoState();
@@ -1759,7 +1770,9 @@
       if (!saveResult.ok) return;
       // Notify the extension content script (if present) that we just updated Drive.
       window.postMessage({ type: "JOBTRAIL_SYNC_REQUEST" }, "*");
-      toast(saveResult.localOnly ? "Profile saved locally" : "Profile saved");
+      const activeSection = data.findActiveSection(state.profile);
+      const fileSuffix = activeSection && activeSection.resumeFile ? " · CV stored" : "";
+      toast(saveResult.localOnly ? `Profile saved locally${fileSuffix}` : `Profile saved${fileSuffix}`);
     });
   }
 

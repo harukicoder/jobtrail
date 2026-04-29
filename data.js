@@ -15,6 +15,8 @@
     "city",
     "country",
     "location",
+    "currentCompany",
+    "currentTitle",
     "linkedinUrl",
     "githubUrl",
     "portfolioUrl"

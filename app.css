@@ -1011,6 +1011,10 @@ button, input, select, textarea {
   color: var(--muted);
   font-size: 12px;
 }
+.resume-file-name.has-file {
+  color: var(--teal-800);
+  font-weight: 700;
+}
 
 @media (max-width: 620px) {
   .profile-group .form-grid { grid-template-columns: 1fr; }
