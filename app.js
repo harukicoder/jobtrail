@@ -1291,7 +1291,13 @@
   //     overwriting them with Drive's stale state silently loses the edit).
   // The dashboard / extension still propagates eventually via sync — what we
   // protect here is the user's in-tab edits.
+  function profileEditorOpen() {
+    const modal = document.getElementById("profile-modal");
+    return !!(modal && !modal.hidden);
+  }
+
   function pullSuppressed() {
+    if (profileEditorOpen()) return true;
     if (saveInFlight) return true;
     if (lastSaveFailedAt && Date.now() - lastSaveFailedAt < FAILED_SAVE_GUARD_MS) return true;
     return false;
@@ -1345,6 +1351,7 @@
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local" && area !== "sync") return;
       if (!(changes[data.STORAGE_KEY] || changes[data.PROFILE_KEY] || changes[data.AUTOFILL_MAPPINGS_KEY])) return;
+      if (profileEditorOpen()) return;
       if (extensionReloadTimer) clearTimeout(extensionReloadTimer);
       extensionReloadTimer = setTimeout(async () => {
         extensionReloadTimer = null;
@@ -1659,6 +1666,11 @@
       const file = resumeFileInput.files && resumeFileInput.files[0];
       if (!section || !file) return;
       try {
+        const label = $("profile-resumeFile-name");
+        if (label) {
+          label.textContent = `Reading CV: ${file.name}${file.size ? ` · ${Math.round(file.size / 1024)} KB` : ""}`;
+          label.classList.add("has-file");
+        }
         const pendingRead = readFileAsDataUrl(file);
         resumeFileReadPromise = pendingRead;
         section.resumeFile = await pendingRead;
@@ -1667,6 +1679,7 @@
         toast("CV file attached to this profile section");
       } catch (error) {
         resumeFileReadPromise = null;
+        renderResumeFileControl(section);
         toast(error && error.message ? error.message : "Could not attach CV file.", { error: true });
       }
     });
