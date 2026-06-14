@@ -1232,10 +1232,13 @@
     if (!section) return { added: 0, reason: "no-section" };
 
     const existing = Array.isArray(section.customAnswers) ? section.customAnswers : [];
-    // Dedupe within the batch as well: identical questions arriving back-to-back
-    // (rare but possible if the user re-clicks the same field) shouldn't add twice.
-    const existingNorms = new Set(existing.map((e) => normalizeCustomAnswerQuestion(e.question)));
+    // Index existing answers by normalized question so we can both dedupe new
+    // captures and update an existing answer when the caller passes `update`
+    // (i.e. the user edited the answer on a form and wants it remembered).
+    const byNorm = new Map();
+    existing.forEach((e) => { byNorm.set(normalizeCustomAnswerQuestion(e.question), e); });
     const additions = [];
+    let updated = 0;
     for (const item of list) {
       const q = cleanCustomAnswerQuestion((item && item.question) || "");
       const a = String((item && item.answer) || "").trim();
@@ -1243,22 +1246,33 @@
       if (q.length < 4 || a.length > 2000) continue;
       if (isNoisyCustomAnswerQuestion(q, a)) continue;
       const norm = normalizeCustomAnswerQuestion(q);
-      if (existingNorms.has(norm)) continue;
-      existingNorms.add(norm);
-      additions.push({
+      const match = byNorm.get(norm);
+      if (match) {
+        // Overwrite the stored answer only when explicitly asked to, and only
+        // if it actually changed — so re-running autofill never churns writes.
+        if (item && item.update && String(match.answer || "").trim() !== a) {
+          match.answer = a.slice(0, 2000);
+          match.capturedAt = new Date().toISOString();
+          updated += 1;
+        }
+        continue;
+      }
+      const entry = {
         id: "qa_" + Math.random().toString(36).slice(2, 10),
         question: q.slice(0, 200),
         answer: a.slice(0, 2000),
         source: "captured",
         capturedAt: new Date().toISOString()
-      });
+      };
+      byNorm.set(norm, entry);
+      additions.push(entry);
     }
 
-    if (!additions.length) return { added: 0, reason: "all-duplicates" };
+    if (!additions.length && !updated) return { added: 0, reason: "all-duplicates" };
 
     section.customAnswers = sanitizeCustomAnswers(existing.concat(additions));
     await saveProfile(profile);
-    return { added: additions.length };
+    return { added: additions.length, updated };
   }
 
   // Append a captured question→answer pair to the active section's customAnswers.
