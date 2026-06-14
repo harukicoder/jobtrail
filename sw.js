@@ -7,7 +7,7 @@
 // working UI offline.
 
 // Bump this whenever the shell changes so browsers drop the old cache.
-const CACHE_NAME = "jobtrail-shell-v28";
+const CACHE_NAME = "jobtrail-shell-v29";
 const SHELL_URLS = [
   "./",
   "./index.html",
@@ -18,7 +18,10 @@ const SHELL_URLS = [
   "./drive-sync.js",
   "./manifest.webmanifest",
   "./icon.svg",
-  "./icon-maskable.svg"
+  "./icon-maskable.svg",
+  // CV text extraction (loaded on demand, but precache so it works offline).
+  "./vendor/pdf.min.mjs",
+  "./vendor/pdf.worker.min.mjs"
 ];
 
 self.addEventListener("install", (event) => {

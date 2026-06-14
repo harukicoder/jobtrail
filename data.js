@@ -145,6 +145,20 @@
       .join(" ");
   }
 
+  // A name entered in ALL CAPS or all-lowercase looks wrong when typed into a
+  // form. Title-case those, but leave intentionally mixed-case names untouched
+  // (McDonald, O'Brien, van der Berg) so we never "correct" a real name.
+  function normalizeNameCase(value) {
+    const name = String(value || "").trim();
+    if (!name) return "";
+    const isAllCaps = name === name.toUpperCase();
+    const isAllLower = name === name.toLowerCase();
+    if (!isAllCaps && !isAllLower) return name;
+    return name
+      .toLowerCase()
+      .replace(/(^|[\s'’\-])([a-zà-öø-ÿ])/g, (m, sep, ch) => sep + ch.toUpperCase());
+  }
+
   function inferCompanyFromUrl(rawUrl) {
     try {
       const url = new URL(rawUrl);
@@ -978,7 +992,13 @@
     PROFILE_COMMON_FIELDS.forEach((field) => {
       profile[field] = source[field] ? String(source[field]).trim() : "";
     });
-    if (!profile.fullName && (profile.firstName || profile.lastName)) {
+    // Tidy name casing on every read/write so autofill never types ALL-CAPS or
+    // all-lowercase names into a form (mixed-case names are preserved).
+    profile.firstName = normalizeNameCase(profile.firstName);
+    profile.lastName = normalizeNameCase(profile.lastName);
+    if (profile.fullName) {
+      profile.fullName = normalizeNameCase(profile.fullName);
+    } else if (profile.firstName || profile.lastName) {
       profile.fullName = [profile.firstName, profile.lastName].filter(Boolean).join(" ").trim();
     }
 
@@ -1106,19 +1126,73 @@
       .toLowerCase();
   }
 
+  // Remove a block of words that is immediately repeated, which happens when a
+  // field's label, aria-label, name and option text all carry the same string:
+  //   "website website website"               -> "website"
+  //   "united kingdom united kingdom are you"  -> "united kingdom are you"
+  function collapseAdjacentDuplicateBlocks(text) {
+    let words = String(text || "").trim().split(/\s+/).filter(Boolean);
+    if (words.length < 2 || words.length > 120) return words.join(" ");
+    const eq = (a, b) => a.toLowerCase() === b.toLowerCase();
+    let guard = 0;
+    let changed = true;
+    while (changed && guard++ < 200) {
+      changed = false;
+      for (let i = 0; i < words.length && !changed; i++) {
+        const maxL = Math.floor((words.length - i) / 2);
+        for (let L = maxL; L >= 1; L--) {
+          let dup = true;
+          for (let k = 0; k < L; k++) {
+            if (!eq(words[i + k], words[i + L + k])) { dup = false; break; }
+          }
+          if (dup) { words.splice(i + L, L); changed = true; break; }
+        }
+      }
+    }
+    return words.join(" ");
+  }
+
+  // Forms often expose the question twice (visible label + accessibility name),
+  // sometimes with the second copy truncated: "Question? Questio". If the text
+  // after the first "?" is just the start of the question again, drop it.
+  function dropQuestionEcho(text) {
+    const t = String(text || "").trim();
+    const qIdx = t.indexOf("?");
+    if (qIdx <= 0 || qIdx >= t.length - 1) return t;
+    const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const head = t.slice(0, qIdx + 1).trim();
+    const tailN = norm(t.slice(qIdx + 1));
+    if (tailN.length >= 6 && norm(head).startsWith(tailN.slice(0, 60))) return head;
+    return t;
+  }
+
   function cleanCustomAnswerQuestion(q) {
-    return String(q || "")
+    let out = String(q || "")
       .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/ig, " ")
       .replace(/[0-9a-f]{5,}-[0-9a-f-]{8,}/ig, " ")
       .replace(/\b[0-9a-f]{20,}\b/ig, " ")
       .replace(/\b[a-z0-9]{8,}_[a-z0-9_-]{8,}\b/ig, " ")
       .replace(/_?systemfield_?/ig, " ")
+      // Strip framework/DOM widget tokens: "__ -labeled-radio-0",
+      // "-labeled-checkbox-3", "react-select-2-input", "radio-4".
+      .replace(/[_|*\s-]*labeled-(?:radio|checkbox|select|input|listbox|combobox|textbox)-\d+/ig, " ")
+      .replace(/\breact-select-[a-z0-9-]+/ig, " ")
+      .replace(/\b(?:radio|checkbox|listbox|combobox|textbox)-\d+\b/ig, " ")
       .replace(/\btype here(?:\.\.\.)?\b/ig, " ")
       .replace(/\.{2,}/g, " ")
+      .replace(/[_|]{2,}/g, " ")
       .replace(/\b(?:input|field|control|button|select)\b(?:\s+\1\b)+/ig, "$1")
       .replace(/\s+/g, " ")
-      .replace(/^[\s:：?？.,;|-]+|[\s:：?？.,;|-]+$/g, "")
       .trim();
+    out = collapseAdjacentDuplicateBlocks(out);
+    out = dropQuestionEcho(out);
+    out = out
+      .replace(/\s+/g, " ")
+      .replace(/^[\s:：?？.,;|_*-]+|[\s:：?？.,;|_*-]+$/g, "")
+      .trim();
+    // Tidy the display: capitalize the first letter (matching is done on a
+    // lowercased copy elsewhere, so case here is purely cosmetic).
+    return out ? out.charAt(0).toUpperCase() + out.slice(1) : out;
   }
 
   function isNoisyCustomAnswerQuestion(question, answer) {
@@ -1320,6 +1394,7 @@
     normalizeCustomAnswerQuestion,
     sanitizeJob,
     sanitizeProfile,
+    normalizeNameCase,
     saveAutofillMapping,
     saveProfile,
     statusBadge,

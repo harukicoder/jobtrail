@@ -1540,6 +1540,78 @@
     });
   }
 
+  // ---- CV text extraction (PDF / plain text) -------------------------------
+  //
+  // Populates the "CV / resume (plain text)" box that AI cover-letter and
+  // autofill answers read from. pdf.js is bundled locally (vendor/) so this
+  // works offline with no backend; it's ~0.3 MB and loaded on first use only.
+  let pdfjsLibPromise = null;
+  function loadPdfJs() {
+    if (!pdfjsLibPromise) {
+      pdfjsLibPromise = import("./vendor/pdf.min.mjs").then((lib) => {
+        try {
+          lib.GlobalWorkerOptions.workerSrc =
+            new URL("./vendor/pdf.worker.min.mjs", document.baseURI).href;
+        } catch (_) {
+          lib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.mjs";
+        }
+        return lib;
+      });
+    }
+    return pdfjsLibPromise;
+  }
+
+  async function extractTextFromPdf(arrayBuffer) {
+    const pdfjsLib = await loadPdfJs();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const pageCount = Math.min(pdf.numPages, 30);
+    const pages = [];
+    for (let i = 1; i <= pageCount; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      pages.push(content.items.map((it) => (it && it.str) || "").join(" "));
+      if (typeof page.cleanup === "function") page.cleanup();
+    }
+    return pages.join("\n").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  async function extractResumeText(file) {
+    const name = String((file && file.name) || "").toLowerCase();
+    const type = String((file && file.type) || "");
+    if (type === "application/pdf" || name.endsWith(".pdf")) {
+      return extractTextFromPdf(await file.arrayBuffer());
+    }
+    if (type.startsWith("text/") || name.endsWith(".txt") || name.endsWith(".md")) {
+      return String((await file.text()) || "").trim();
+    }
+    // .doc/.docx/.rtf need a heavier dependency to parse — not auto-extracted.
+    return "";
+  }
+
+  // After a CV file is attached, pull its text into the resume box so AI
+  // features have something to work from. Never overwrites text the user
+  // typed/pasted themselves.
+  async function maybeExtractResumeText(file, section) {
+    const resumeTextEl = $("profile-resumeText");
+    if (resumeTextEl && resumeTextEl.value.trim().length > 0) return;
+    const label = $("profile-resumeFile-name");
+    try {
+      if (label) label.textContent = `Reading text from ${file.name}…`;
+      const clean = String((await extractResumeText(file)) || "").trim().slice(0, 20000);
+      if (clean) {
+        if (resumeTextEl) resumeTextEl.value = clean;
+        if (section) section.resumeText = clean;
+        toast("CV text extracted — review it in the box below");
+      } else {
+        toast("Couldn't read text from this file type — paste your CV below.", { error: true });
+      }
+    } catch (_) {
+      toast("Couldn't read this PDF — paste your CV text below.", { error: true });
+    } finally {
+      renderResumeFileControl(section);
+    }
+  }
+
   // ---------- Saved answers (per-section custom Q&A library) ----------
   //
   // The list is the same shape as the extension dashboard's. The webapp adds:
@@ -1677,6 +1749,7 @@
         if (resumeFileReadPromise === pendingRead) resumeFileReadPromise = null;
         renderResumeFileControl(section);
         toast("CV file attached to this profile section");
+        await maybeExtractResumeText(file, section);
       } catch (error) {
         resumeFileReadPromise = null;
         renderResumeFileControl(section);
