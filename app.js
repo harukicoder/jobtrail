@@ -1312,6 +1312,7 @@
 
   async function pullFromDriveIfDue() {
     if (!state.loaded) return;
+    if (state.demo) return; // demo is sandboxed — never touch Drive / auth
     if (pullSuppressed()) return;
     if (isExtensionRuntime) {
       const signedIn = await driveAuth.isSignedIn();
@@ -1331,6 +1332,7 @@
     followupPullTimer = setTimeout(async () => {
       followupPullTimer = null;
       if (!state.loaded) return;
+      if (state.demo) return;
       if (pullSuppressed()) return;
       if (isExtensionRuntime) {
         const signedIn = await driveAuth.isSignedIn();
