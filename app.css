@@ -46,6 +46,7 @@ button, input, select, textarea {
   padding: 18px 28px;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
   flex-wrap: wrap;
 }
 
@@ -56,16 +57,12 @@ button, input, select, textarea {
 }
 
 .brand-mark {
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--teal-700), var(--teal-500));
-  color: #fff;
-  font-weight: 700;
-  font-size: 18px;
-  box-shadow: 0 4px 10px rgba(20, 184, 166, 0.28);
+  width: 42px;
+  height: 42px;
+  display: block;
+  /* drop-shadow follows the icon's rounded silhouette (box-shadow would draw a
+     square halo around the transparent corners). */
+  filter: drop-shadow(0 4px 10px rgba(20, 184, 166, 0.30));
 }
 
 .eyebrow {
@@ -143,7 +140,36 @@ button, input, select, textarea {
   color: var(--teal-800);
   border-color: rgba(20, 184, 166, 0.2);
 }
-.ghost-button:hover { background: var(--teal-100); }
+.ghost-button:hover:not(:disabled) {
+  background: var(--teal-100);
+  transform: translateY(-1px);
+}
+
+/* Buttons that pair a small icon with a label (Export / Import). */
+.icon-button-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.icon-button-text svg { flex: none; opacity: 0.85; }
+
+/* Export + Import read as one related pair. */
+.io-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Sign out is a low-priority action — keep it quiet so it doesn't compete. */
+.quiet-button {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--muted);
+}
+.quiet-button:hover:not(:disabled) {
+  background: var(--bg);
+  color: var(--text-soft);
+}
 
 .secondary-button {
   background: var(--amber-100);

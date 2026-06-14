@@ -14,7 +14,7 @@
   <body>
     <header class="app-header">
       <div class="brand-row">
-        <div class="brand-mark">J</div>
+        <img class="brand-mark" src="icon.svg" width="42" height="42" alt="JobTrail logo">
         <div>
           <p class="eyebrow">JobTrail</p>
           <h1>Your job-search CRM</h1>
@@ -24,11 +24,19 @@
         <span class="sync-pill" id="sync-pill">Not signed in</span>
         <button class="ghost-button" id="profile-button" type="button" hidden>Profile</button>
         <button class="ghost-button" id="install-button" type="button" hidden>Install app</button>
-        <button class="ghost-button" id="export-button" type="button" disabled>Export JSON</button>
-        <button class="ghost-button" id="import-button" type="button" disabled>Import JSON</button>
+        <div class="io-group">
+          <button class="ghost-button icon-button-text" id="export-button" type="button" disabled title="Download all your data as a JSON backup">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            <span>Export</span>
+          </button>
+          <button class="ghost-button icon-button-text" id="import-button" type="button" disabled title="Restore your data from a JSON backup">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21V9"/><path d="m7 14 5-5 5 5"/><path d="M5 3h14"/></svg>
+            <span>Import</span>
+          </button>
+        </div>
         <input type="file" id="import-input" accept="application/json" hidden>
         <button class="primary-button" id="signin-button" type="button">Sign in with Google</button>
-        <button class="ghost-button" id="signout-button" type="button" hidden>Sign out</button>
+        <button class="ghost-button quiet-button" id="signout-button" type="button" hidden>Sign out</button>
       </div>
     </header>
 
