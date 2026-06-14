@@ -17,7 +17,8 @@
     jobs: [],
     profile: null,
     autofillMappings: {},
-    loaded: false
+    loaded: false,
+    demo: false
   };
 
   // OAuth token state
@@ -67,6 +68,7 @@
   const installBtn = $("install-button");
   const profileBtn = $("profile-button");
   const signedOutCard = $("signed-out-card");
+  const demoBanner = $("demo-banner");
   const statsRow = $("stats-row");
   const viewTabs = $("view-tabs");
   const funnelSection = $("funnel-section");
@@ -362,6 +364,11 @@
   const FAILED_SAVE_GUARD_MS = 30000; // hold local edits for 30 s after a failed save
 
   async function saveToDrive() {
+    // Demo mode is a sandbox — let edits update the view but never touch Drive.
+    if (state.demo) {
+      setSync("", "Demo — not saved");
+      return { ok: true, localOnly: true };
+    }
     setSync("syncing", "Saving…");
     saveInFlight = true;
     try {
@@ -404,7 +411,7 @@
   function statusChip(status) {
     const color = data.statusColor(status);
     const label = data.statusLabel(status);
-    return `<span class="status-chip" style="background:${color}">${escapeHtml(label)}</span>`;
+    return `<span class="status-chip" style="--chip:${color}">${escapeHtml(label)}</span>`;
   }
 
   // Sortable columns: persisted to localStorage so the user's choice survives
@@ -1389,6 +1396,7 @@
 
   function showSignedOut() {
     signedOutCard.hidden = false;
+    if (demoBanner) demoBanner.hidden = true;
     statsRow.hidden = true;
     if (viewTabs) viewTabs.hidden = true;
     funnelSection.hidden = true;
@@ -1401,8 +1409,69 @@
     setSync("", "Not signed in");
   }
 
+  // ---------- Demo mode (no auth — for portfolio visitors) ----------
+
+  function demoDate(daysAgo) {
+    const d = new Date();
+    d.setDate(d.getDate() - daysAgo);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function buildDemoJobs() {
+    const seed = [
+      { jobTitle: "Senior Product Engineer", company: "Linear", location: "Remote (EU)", workMode: "Remote", jobType: "full-time", status: "interviewing", dateApplied: demoDate(9), url: "https://linear.app/careers", description: "Build delightful, fast product experiences across the Linear app.", aiFitAnalysis: { score: 88 } },
+      { jobTitle: "Founding AI Engineer", company: "ElevenLabs", location: "London, UK", workMode: "Hybrid", jobType: "full-time", status: "applied", dateApplied: demoDate(5), url: "https://elevenlabs.io/careers", aiFitAnalysis: { score: 82 } },
+      { jobTitle: "Forward Deployed Engineer", company: "Ramp", location: "Remote", workMode: "Remote", jobType: "full-time", status: "offer", dateApplied: demoDate(21), description: "Work directly with customers to deploy and tailor the platform." },
+      { jobTitle: "Solutions Engineer", company: "Vercel", location: "London, UK", workMode: "Hybrid", jobType: "full-time", status: "interviewing", dateApplied: demoDate(12) },
+      { jobTitle: "Product Manager, AI", company: "Notion", location: "Remote (UK)", workMode: "Remote", jobType: "full-time", status: "applied", dateApplied: demoDate(3) },
+      { jobTitle: "Full-Stack Engineer", company: "Stickermule", location: "Remote", workMode: "Remote", jobType: "full-time", status: "bookmarked", dateApplied: "" },
+      { jobTitle: "Developer Advocate", company: "Supabase", location: "Remote", workMode: "Remote", jobType: "contract", status: "rejected", dateApplied: demoDate(28) },
+      { jobTitle: "Applied AI Engineer", company: "Perplexity", location: "London, UK", workMode: "On-site", jobType: "full-time", status: "applying", dateApplied: "" }
+    ];
+    return seed.map((j, i) => data.sanitizeJob(Object.assign({
+      id: "demo_" + i,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }, j)));
+  }
+
+  function loadDemo() {
+    state = { jobs: buildDemoJobs(), profile: null, autofillMappings: {}, loaded: true, demo: true };
+    signedOutCard.hidden = true;
+    if (demoBanner) demoBanner.hidden = false;
+    statsRow.hidden = false;
+    if (viewTabs) viewTabs.hidden = false;
+    signInBtn.hidden = true;
+    signOutBtn.hidden = true;
+    if (profileBtn) profileBtn.hidden = false;
+    exportBtn.disabled = false;
+    importBtn.disabled = true;
+    setSync("", "Demo");
+    setView(currentView);
+    renderJobs(); // setView only toggles visibility — this paints the data
+    toast("Loaded sample data — explore freely");
+  }
+
+  function exitDemo() {
+    state = { jobs: [], profile: null, autofillMappings: {}, loaded: false, demo: false };
+    renderJobs();
+    showSignedOut();
+  }
+
   signInBtn.addEventListener("click", signIn);
   signOutBtn.addEventListener("click", signOut);
+
+  // Demo + hero buttons
+  const demoBtn = $("demo-button");
+  const signInBtn2 = $("signin-button-2");
+  const demoSignInBtn = $("demo-signin-button");
+  const demoExitBtn = $("demo-exit-button");
+  const addFirstJobBtn = $("add-first-job");
+  if (demoBtn) demoBtn.addEventListener("click", loadDemo);
+  if (signInBtn2) signInBtn2.addEventListener("click", signIn);
+  if (demoSignInBtn) demoSignInBtn.addEventListener("click", () => { state.demo = false; signIn(); });
+  if (demoExitBtn) demoExitBtn.addEventListener("click", exitDemo);
+  if (addFirstJobBtn) addFirstJobBtn.addEventListener("click", () => openModal(null));
 
   // ---------- Boot ----------
 

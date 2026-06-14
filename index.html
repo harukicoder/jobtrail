@@ -42,19 +42,32 @@
 
     <main class="app-main">
       <section class="signed-out-card" id="signed-out-card">
-        <h2>Sign in to load your data</h2>
-        <p>JobTrail stores a single JSON file in your Google Drive under <code>JobTrail/jobtrail-data.json</code>. The app searches for and updates that JobTrail file so the webapp and Chrome extension stay on the same data.</p>
+        <p class="hero-eyebrow">Personal job-search CRM</p>
+        <h2>Track every application from bookmark to offer</h2>
+        <p>Log applications, watch your pipeline and funnel analytics, and prep interviews with AI — all in one place. Your data stays private in your own Google Drive.</p>
+        <div class="signed-out-actions">
+          <button class="primary-button" id="signin-button-2" type="button">Sign in with Google</button>
+          <button class="secondary-button" id="demo-button" type="button">View live demo →</button>
+        </div>
+        <p class="signed-out-note">No account needed to explore the demo. When you sign in, your data syncs privately to <code>Drive/JobTrail</code>.</p>
         <p class="config-warn" id="config-warn" hidden>
           This build has no Google Client ID configured. Copy <code>config.example.js</code> to <code>config.js</code> and set <code>googleClientId</code>. See the <a href="README.md">README</a>.
         </p>
       </section>
 
+      <div class="demo-banner" id="demo-banner" hidden>
+        <span class="demo-tag">Demo</span>
+        <span class="demo-text">You're exploring sample data — nothing is saved.</span>
+        <button class="primary-button" id="demo-signin-button" type="button">Sign in to start yours</button>
+        <button class="ghost-button quiet-button" id="demo-exit-button" type="button">Exit demo</button>
+      </div>
+
       <section class="stats-row" id="stats-row" hidden>
-        <div class="stat-card"><span class="stat-number" id="stat-total">0</span><span class="stat-label">Total</span></div>
-        <div class="stat-card"><span class="stat-number" id="stat-applied">0</span><span class="stat-label">Applied</span></div>
-        <div class="stat-card"><span class="stat-number" id="stat-interviewing">0</span><span class="stat-label">Interviewing</span></div>
-        <div class="stat-card"><span class="stat-number" id="stat-offer">0</span><span class="stat-label">Offers</span></div>
-        <div class="stat-card"><span class="stat-number" id="stat-rejected">0</span><span class="stat-label">Rejected</span></div>
+        <div class="stat-card stat-total"><span class="stat-number" id="stat-total">0</span><span class="stat-label">Total</span></div>
+        <div class="stat-card stat-applied"><span class="stat-number" id="stat-applied">0</span><span class="stat-label">Applied</span></div>
+        <div class="stat-card stat-interviewing"><span class="stat-number" id="stat-interviewing">0</span><span class="stat-label">Interviewing</span></div>
+        <div class="stat-card stat-offer"><span class="stat-number" id="stat-offer">0</span><span class="stat-label">Offers</span></div>
+        <div class="stat-card stat-rejected"><span class="stat-number" id="stat-rejected">0</span><span class="stat-label">Rejected</span></div>
       </section>
 
       <nav class="view-tabs" id="view-tabs" hidden>
@@ -96,7 +109,16 @@
         <div class="job-type-tabs" id="job-type-tabs" aria-label="Filter jobs by type"></div>
 
         <div class="jobs-empty" id="jobs-empty" hidden>
-          <p>No jobs yet. Add one, or save pages from the JobTrail Chrome extension — then export/import here.</p>
+          <div class="empty-art" aria-hidden="true">
+            <svg viewBox="0 0 64 64" width="56" height="56" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="12" y="16" width="40" height="36" rx="5"/>
+              <path d="M24 16v-4a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v4"/>
+              <path d="M32 30v12M26 36h12"/>
+            </svg>
+          </div>
+          <h3>No applications yet</h3>
+          <p>Add your first application and track it from bookmark to offer. You can also save jobs straight from any page with the JobTrail Chrome extension.</p>
+          <button class="primary-button" id="add-first-job" type="button">Add your first application</button>
         </div>
 
         <div class="jobs-table-wrap">

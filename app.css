@@ -188,20 +188,55 @@ button, input, select, textarea {
 .signed-out-card {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  box-shadow: var(--shadow-sm);
-  padding: 28px;
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+  padding: 40px 36px;
+  max-width: 720px;
+  margin: 12px auto 0;
+  text-align: center;
+}
+
+.hero-eyebrow {
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--teal-700);
 }
 
 .signed-out-card h2 {
-  margin: 0 0 10px;
-  font-size: 20px;
+  margin: 0 0 12px;
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
 }
 
 .signed-out-card p {
-  margin: 0 0 8px;
+  margin: 0 auto 8px;
+  max-width: 540px;
   color: var(--text-soft);
-  line-height: 1.5;
+  line-height: 1.6;
+}
+
+.signed-out-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 22px 0 14px;
+}
+
+.signed-out-actions .primary-button,
+.signed-out-actions .secondary-button {
+  padding: 12px 22px;
+  font-size: 15px;
+  border-radius: 11px;
+}
+
+.signed-out-note {
+  font-size: 12.5px;
+  color: var(--muted);
 }
 
 .signed-out-card code {
@@ -210,6 +245,30 @@ button, input, select, textarea {
   border-radius: 4px;
   font-size: 12px;
 }
+
+/* Demo mode banner */
+.demo-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 18px;
+  background: var(--teal-50);
+  border: 1px solid rgba(20, 184, 166, 0.28);
+  border-radius: 12px;
+}
+.demo-tag {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--teal-700);
+  padding: 4px 9px;
+  border-radius: 6px;
+}
+.demo-text { color: var(--teal-800); font-weight: 600; font-size: 13.5px; }
+.demo-banner .primary-button { margin-left: auto; padding: 7px 14px; }
 
 .config-warn {
   margin-top: 12px;
@@ -231,19 +290,39 @@ button, input, select, textarea {
 }
 
 .stat-card {
+  position: relative;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 12px;
   box-shadow: var(--shadow-sm);
-  padding: 14px 16px;
+  padding: 16px 16px 14px;
   display: grid;
   gap: 2px;
+  overflow: hidden;
+  transition: transform 140ms ease, box-shadow 140ms ease;
 }
+.stat-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--stat-accent, var(--teal-500));
+}
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.stat-total { --stat-accent: #0d7a74; }
+.stat-applied { --stat-accent: #0f766e; }
+.stat-interviewing { --stat-accent: #c58b47; }
+.stat-offer { --stat-accent: #3e956a; }
+.stat-rejected { --stat-accent: #9e5c63; }
 
 .stat-number {
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 24px;
+  font-weight: 800;
   letter-spacing: -0.02em;
+  color: var(--stat-accent, var(--text));
 }
 
 .stat-label {
@@ -350,8 +429,31 @@ button, input, select, textarea {
 
 .jobs-empty {
   text-align: center;
-  padding: 30px 10px;
+  padding: 48px 20px 52px;
   color: var(--muted);
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+.empty-art {
+  width: 84px;
+  height: 84px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--teal-50);
+  color: var(--teal-500);
+  margin-bottom: 12px;
+}
+.jobs-empty h3 {
+  margin: 0;
+  font-size: 17px;
+  color: var(--text);
+}
+.jobs-empty p {
+  margin: 4px 0 16px;
+  max-width: 380px;
+  line-height: 1.55;
 }
 
 .jobs-table-wrap {
@@ -407,14 +509,16 @@ button, input, select, textarea {
 }
 
 .jobs-table tbody td {
-  padding: 10px 12px;
+  padding: 12px 12px;
   border-bottom: 1px solid var(--line);
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 .jobs-table tbody tr:last-child td { border-bottom: 0; }
 
-.jobs-table tbody tr:hover { background: rgba(20, 184, 166, 0.04); }
+.jobs-table tbody tr { transition: background 120ms ease; }
+.jobs-table tbody tr:hover { background: var(--teal-50); }
+.jobs-table .job-title-cell strong { font-weight: 700; }
 
 /* Rows are edit-entry points — show it with cursor + focus ring. */
 .jobs-table tbody tr.job-row { cursor: pointer; }
@@ -504,14 +608,26 @@ button, input, select, textarea {
 .job-title-cell a:hover { text-decoration: underline; }
 
 .status-chip {
-  display: inline-block;
-  padding: 3px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
-  color: #fff;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
+  /* Soft tinted pill: light fill + dark same-hue text + a colored dot. */
+  background: color-mix(in srgb, var(--chip, #0f766e) 14%, #fff);
+  color: color-mix(in srgb, var(--chip, #0f766e) 72%, #000);
+  border: 1px solid color-mix(in srgb, var(--chip, #0f766e) 26%, #fff);
+}
+.status-chip::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--chip, #0f766e);
+  flex: none;
 }
 
 .row-actions {
