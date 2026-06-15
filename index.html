@@ -73,7 +73,39 @@
       <nav class="view-tabs" id="view-tabs" hidden>
         <button type="button" class="view-tab is-active" data-view="pipeline">Pipeline</button>
         <button type="button" class="view-tab" data-view="funnel">Funnel analytics</button>
+        <button type="button" class="view-tab" data-view="analytics" id="analytics-tab" hidden>Site analytics</button>
       </nav>
+
+      <section class="analytics-section" id="analytics-section" hidden>
+        <div class="analytics-head">
+          <div>
+            <h2>Site analytics</h2>
+            <p class="funnel-sub">Visits to your public app — where people come from, what they view, and how many sign in.</p>
+          </div>
+          <select id="analytics-range" aria-label="Date range">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+        </div>
+        <div class="stats-row analytics-cards">
+          <div class="stat-card stat-total"><span class="stat-number" id="an-visitors">—</span><span class="stat-label">Visitors</span></div>
+          <div class="stat-card stat-applied"><span class="stat-number" id="an-pageviews">—</span><span class="stat-label">Page views</span></div>
+          <div class="stat-card stat-offer"><span class="stat-number" id="an-signins">—</span><span class="stat-label">Sign-ins</span></div>
+          <div class="stat-card stat-interviewing"><span class="stat-number" id="an-signed-visitors">—</span><span class="stat-label">Signed-in people</span></div>
+        </div>
+        <div class="analytics-grid">
+          <div class="analytics-card analytics-trend">
+            <h3>Daily visits</h3>
+            <div class="an-bars" id="an-bars"></div>
+          </div>
+          <div class="analytics-card"><h3>Top referrers</h3><ul class="an-list" id="an-referrers"></ul></div>
+          <div class="analytics-card"><h3>Top countries</h3><ul class="an-list" id="an-countries"></ul></div>
+          <div class="analytics-card"><h3>Top pages</h3><ul class="an-list" id="an-paths"></ul></div>
+          <div class="analytics-card"><h3>Devices</h3><ul class="an-list" id="an-devices"></ul></div>
+        </div>
+        <p class="analytics-status" id="analytics-status"></p>
+      </section>
 
       <section class="funnel-section" id="funnel-section" hidden>
         <div class="funnel-head">

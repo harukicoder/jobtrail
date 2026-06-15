@@ -1490,11 +1490,118 @@
   if (demoExitBtn) demoExitBtn.addEventListener("click", exitDemo);
   if (addFirstJobBtn) addFirstJobBtn.addEventListener("click", () => openModal(null));
 
+  // ---------- Site analytics (visitor dashboard) ----------
+  //
+  // A privacy-light beacon POSTs to the /api/track Netlify function on each
+  // page view (and on sign-in). The owner-only "Site analytics" tab reads
+  // aggregates from /api/stats using a shared token. No backend = no data, so
+  // this is a no-op anywhere the functions don't exist (extension, file://).
+  const ANALYTICS_TOKEN_KEY = "jobtrail_analytics_token";
+  const VISITOR_ID_KEY = "jobtrail_vid";
+
+  function analyticsHostable() {
+    return !isExtensionRuntime && /^https?:$/.test(location.protocol);
+  }
+  function analyticsToken() {
+    try { return localStorage.getItem(ANALYTICS_TOKEN_KEY) || ""; } catch (_) { return ""; }
+  }
+  function visitorId() {
+    try {
+      let v = localStorage.getItem(VISITOR_ID_KEY);
+      if (!v) {
+        v = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + "-" + Math.random().toString(36).slice(2));
+        localStorage.setItem(VISITOR_ID_KEY, v);
+      }
+      return v;
+    } catch (_) { return ""; }
+  }
+  function trackEvent(type) {
+    if (!analyticsHostable()) return;
+    try {
+      fetch("/api/track", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type, path: location.pathname, ref: document.referrer, sid: visitorId() }),
+        keepalive: true
+      }).catch(() => {});
+    } catch (_) { /* never let tracking affect the page */ }
+  }
+
+  function maybeRevealAnalyticsTab() {
+    const tab = $("analytics-tab");
+    if (!tab || !analyticsHostable()) return;
+    if (!analyticsToken() && location.hash === "#analytics") {
+      const entered = (window.prompt("Enter your analytics token (the ANALYTICS_TOKEN you set in Netlify):") || "").trim();
+      if (entered) { try { localStorage.setItem(ANALYTICS_TOKEN_KEY, entered); } catch (_) {} }
+    }
+    if (analyticsToken()) tab.hidden = false;
+  }
+
+  function renderAnalyticsData(d) {
+    const t = (d && d.totals) || {};
+    const num = (n) => Number(n || 0).toLocaleString();
+    const set = (id, n) => { const el = $(id); if (el) el.textContent = num(n); };
+    set("an-visitors", t.visitors);
+    set("an-pageviews", t.pageviews);
+    set("an-signins", t.signins);
+    set("an-signed-visitors", t.signedInVisitors);
+
+    const bars = $("an-bars");
+    if (bars) {
+      const days = (d && d.byDay) || [];
+      const max = Math.max(1, ...days.map((x) => x.pageviews || 0));
+      bars.innerHTML = days.length
+        ? days.map((x) => {
+            const h = Math.max(2, Math.round(((x.pageviews || 0) / max) * 100));
+            return `<div class="an-bar" title="${escapeHtml(x.day)} · ${x.pageviews} views · ${x.visitors} visitors · ${x.signins} sign-ins"><span class="an-bar-fill" style="height:${h}%"></span></div>`;
+          }).join("")
+        : '<p class="muted">No visits in this range yet.</p>';
+    }
+    const list = (id, rows, keyName) => {
+      const el = $(id); if (!el) return;
+      el.innerHTML = (rows && rows.length)
+        ? rows.map((r) => `<li><span>${escapeHtml(String(r[keyName] || "—"))}</span><strong>${num(r.count)}</strong></li>`).join("")
+        : '<li class="muted">No data yet.</li>';
+    };
+    list("an-referrers", d && d.topReferrers, "name");
+    list("an-countries", d && d.topCountries, "code");
+    list("an-paths", d && d.topPaths, "path");
+    const dev = (d && d.devices) || { mobile: 0, desktop: 0 };
+    const devEl = $("an-devices");
+    if (devEl) devEl.innerHTML = `<li><span>Desktop</span><strong>${num(dev.desktop)}</strong></li><li><span>Mobile</span><strong>${num(dev.mobile)}</strong></li>`;
+  }
+
+  async function renderAnalytics() {
+    const status = $("analytics-status");
+    const token = analyticsToken();
+    if (!token) { if (status) status.textContent = "No analytics token set. Open this page with #analytics in the URL to add one."; return; }
+    const days = ($("analytics-range") && $("analytics-range").value) || "30";
+    if (status) status.textContent = "Loading…";
+    try {
+      const res = await fetch("/api/stats?days=" + encodeURIComponent(days), { headers: { "x-analytics-token": token } });
+      if (res.status === 403) {
+        if (status) status.textContent = "Token rejected. Re-add it via #analytics.";
+        try { localStorage.removeItem(ANALYTICS_TOKEN_KEY); } catch (_) {}
+        return;
+      }
+      if (!res.ok) { if (status) status.textContent = "Couldn't load analytics (HTTP " + res.status + ")."; return; }
+      const data = await res.json();
+      renderAnalyticsData(data);
+      if (status) status.textContent = "Updated " + new Date().toLocaleString() + " · last " + (data.rangeDays || days) + " days";
+    } catch (_) {
+      if (status) status.textContent = "Analytics unavailable — the site must be deployed on Netlify with the functions enabled.";
+    }
+  }
+
+  if ($("analytics-range")) $("analytics-range").addEventListener("change", renderAnalytics);
+
   // ---------- Boot ----------
 
   drive.setTokenProvider(isExtensionRuntime && driveAuth ? driveAuth.tokenProvider : tokenProvider);
   populateStatusSelects();
   showSignedOut();
+  maybeRevealAnalyticsTab();
+  trackEvent("pageview");
 
   if (!isExtensionRuntime && !hasValidClientId()) {
     configWarn.hidden = false;

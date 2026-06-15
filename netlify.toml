@@ -1,0 +1,8 @@
+# Netlify config for JobTrail. The repo root is the published site, plus two
+# serverless functions that power the in-app Analytics dashboard.
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
