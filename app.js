@@ -305,8 +305,12 @@
     return dataset;
   }
 
-  async function loadFromDrive() {
-    setSync("syncing", "Loading…");
+  async function loadFromDrive(opts) {
+    // Background pulls (every 15s / on focus) pass { silent: true } so the sync
+    // pill doesn't flicker "Loading… → Synced" constantly. Explicit loads and
+    // the initial sign-in still show progress.
+    const silent = !!(opts && opts.silent);
+    if (!silent) setSync("syncing", "Loading…");
     if (isExtensionRuntime) {
       const [localDataset, remoteDataset] = await Promise.all([
         readExtensionDataset(),
@@ -340,7 +344,7 @@
           autofillMappings: state.autofillMappings
         });
       }
-      setSync("signed-in", "Synced");
+      if (!silent) setSync("signed-in", "Synced");
       return;
     }
     const dataset = await drive.readData();
@@ -348,7 +352,7 @@
     // continue to propagate) — but they're filtered out of every UI read.
     applyDatasetToState(dataset);
     await mirrorStateToExtensionStorage();
-    setSync("signed-in", "Synced");
+    if (!silent) setSync("signed-in", "Synced");
   }
 
   // While `saveInFlight` is true we suppress the visibility/focus pull that
@@ -1321,7 +1325,7 @@
     if (Date.now() - lastVisiblePullAt < VISIBLE_PULL_COOLDOWN_MS) return;
     lastVisiblePullAt = Date.now();
     try {
-      await loadFromDrive();
+      await loadFromDrive({ silent: true });
       renderJobs();
     } catch (err) {
       console.warn("Visibility pull failed:", err);
@@ -1339,7 +1343,7 @@
         if (!signedIn) return;
       }
       try {
-        await loadFromDrive();
+        await loadFromDrive({ silent: true });
         renderJobs();
       } catch (err) { /* ignore */ }
     }, 3000);
