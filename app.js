@@ -9,7 +9,11 @@
   // Full Drive scope is intentional here: the webapp and Chrome extension use
   // different OAuth client IDs, so `drive.file` can strand them on separate
   // app-private copies of JobTrail/jobtrail-data.json.
-  const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
+  // drive.file = per-file access to the app's own files only. It's a
+  // non-sensitive scope, so Google no longer shows the "unverified app"
+  // warning and no verification is required. The app still sees the JobTrail
+  // folder/file it created, so existing data is preserved.
+  const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
   const isExtensionRuntime = Boolean(runtime.isExtension && driveAuth);
 
   // In-memory dataset; Drive is the source of truth on disk.
@@ -735,11 +739,17 @@
   // ---------- View switching ----------
 
   function setView(view) {
-    currentView = view === "funnel" ? "funnel" : "pipeline";
+    currentView = (view === "funnel" || view === "analytics") ? view : "pipeline";
     document.querySelectorAll(".view-tab").forEach((btn) => {
       btn.classList.toggle("is-active", btn.dataset.view === currentView);
     });
-    if (currentView === "funnel") {
+    const analyticsSection = $("analytics-section");
+    if (analyticsSection) analyticsSection.hidden = currentView !== "analytics";
+    if (currentView === "analytics") {
+      jobsSection.hidden = true;
+      funnelSection.hidden = true;
+      renderAnalytics();
+    } else if (currentView === "funnel") {
       jobsSection.hidden = true;
       funnelSection.hidden = false;
       renderFunnel();
@@ -1184,6 +1194,7 @@
         return;
       }
       try { localStorage.setItem(SIGNED_IN_FLAG, "1"); } catch (_) {}
+      trackEvent("signin");
       showSignedIn();
       await loadFromDrive();
       renderJobs();
