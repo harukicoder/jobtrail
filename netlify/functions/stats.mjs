@@ -1,8 +1,10 @@
 import { getStore } from "@netlify/blobs";
 
-// Owner-only analytics aggregation. The caller must present the shared secret
-// (set as the ANALYTICS_TOKEN env var in Netlify) via the x-analytics-token
-// header or ?token=. Returns aggregate counts only — no personal data.
+// Superuser-only analytics aggregation. Authorization is the signed-in Google
+// identity: the caller sends their Drive access token as `Authorization:
+// Bearer …`, and we resolve it server-side via Drive's about endpoint. Only
+// OWNER_EMAIL (env override, default below) is allowed. Aggregate counts only.
+const OWNER_EMAIL = (process.env.OWNER_EMAIL || "haruki.kimura.jp@gmail.com").toLowerCase();
 
 function topN(map, n, keyName) {
   return Object.entries(map)
@@ -11,13 +13,21 @@ function topN(map, n, keyName) {
     .map(([k, v]) => ({ [keyName]: k, count: v }));
 }
 
+function forbidden() {
+  return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } });
+}
+
 export default async (req) => {
   const url = new URL(req.url);
-  const expected = process.env.ANALYTICS_TOKEN || "";
-  const token = req.headers.get("x-analytics-token") || url.searchParams.get("token") || "";
-  if (!expected || token !== expected) {
-    return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } });
-  }
+
+  const accessToken = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  if (!accessToken) return forbidden();
+  let email = "";
+  try {
+    const r = await fetch("https://www.googleapis.com/drive/v3/about?fields=user", { headers: { Authorization: "Bearer " + accessToken } });
+    if (r.ok) { const j = await r.json(); email = ((j.user && j.user.emailAddress) || "").toLowerCase(); }
+  } catch (_) { /* email stays empty -> forbidden */ }
+  if (!email || email !== OWNER_EMAIL) return forbidden();
 
   const days = Math.min(Math.max(parseInt(url.searchParams.get("days") || "30", 10) || 30, 1), 120);
   const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);

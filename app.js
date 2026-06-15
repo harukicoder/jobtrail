@@ -1396,6 +1396,8 @@
     if (profileBtn) profileBtn.hidden = false;
     exportBtn.disabled = false;
     importBtn.disabled = false;
+    cachedUserEmail = null; // re-check identity for the owner-only analytics tab
+    maybeRevealAnalyticsTab();
     setView(currentView);
   }
 
@@ -1423,6 +1425,9 @@
     if (profileBtn) profileBtn.hidden = true;
     exportBtn.disabled = true;
     importBtn.disabled = true;
+    cachedUserEmail = null;
+    const anTab = $("analytics-tab");
+    if (anTab) anTab.hidden = true;
     setSync("", "Not signed in");
   }
 
@@ -1492,18 +1497,30 @@
 
   // ---------- Site analytics (visitor dashboard) ----------
   //
-  // A privacy-light beacon POSTs to the /api/track Netlify function on each
-  // page view (and on sign-in). The owner-only "Site analytics" tab reads
-  // aggregates from /api/stats using a shared token. No backend = no data, so
-  // this is a no-op anywhere the functions don't exist (extension, file://).
-  const ANALYTICS_TOKEN_KEY = "jobtrail_analytics_token";
+  // A privacy-light beacon POSTs to /api/track on each page view (and on
+  // sign-in). The "Site analytics" tab is superuser-only: it appears, and
+  // /api/stats authorizes, only for OWNER_EMAIL — verified SERVER-side from the
+  // signed-in Google token (no separate password). No backend = no data, so
+  // this no-ops where the functions don't exist (extension, file://).
+  const OWNER_EMAIL = "haruki.kimura.jp@gmail.com";
   const VISITOR_ID_KEY = "jobtrail_vid";
+  let cachedUserEmail = null;
 
   function analyticsHostable() {
     return !isExtensionRuntime && /^https?:$/.test(location.protocol);
   }
-  function analyticsToken() {
-    try { return localStorage.getItem(ANALYTICS_TOKEN_KEY) || ""; } catch (_) { return ""; }
+  // Drive's `about` endpoint returns the signed-in user's email even with just
+  // the drive scope — so we identify the owner without any extra OAuth scope.
+  async function fetchUserEmail() {
+    if (cachedUserEmail !== null) return cachedUserEmail;
+    cachedUserEmail = "";
+    try {
+      const token = await tokenProvider();
+      if (!token) return cachedUserEmail;
+      const res = await fetch("https://www.googleapis.com/drive/v3/about?fields=user", { headers: { Authorization: "Bearer " + token } });
+      if (res.ok) { const j = await res.json(); cachedUserEmail = (j.user && j.user.emailAddress) || ""; }
+    } catch (_) { /* leave empty */ }
+    return cachedUserEmail;
   }
   function visitorId() {
     try {
@@ -1527,14 +1544,11 @@
     } catch (_) { /* never let tracking affect the page */ }
   }
 
-  function maybeRevealAnalyticsTab() {
+  async function maybeRevealAnalyticsTab() {
     const tab = $("analytics-tab");
     if (!tab || !analyticsHostable()) return;
-    if (!analyticsToken() && location.hash === "#analytics") {
-      const entered = (window.prompt("Enter your analytics token (the ANALYTICS_TOKEN you set in Netlify):") || "").trim();
-      if (entered) { try { localStorage.setItem(ANALYTICS_TOKEN_KEY, entered); } catch (_) {} }
-    }
-    if (analyticsToken()) tab.hidden = false;
+    const email = await fetchUserEmail();
+    tab.hidden = !(email && email.toLowerCase() === OWNER_EMAIL.toLowerCase());
   }
 
   function renderAnalyticsData(d) {
@@ -1573,17 +1587,13 @@
 
   async function renderAnalytics() {
     const status = $("analytics-status");
-    const token = analyticsToken();
-    if (!token) { if (status) status.textContent = "No analytics token set. Open this page with #analytics in the URL to add one."; return; }
     const days = ($("analytics-range") && $("analytics-range").value) || "30";
     if (status) status.textContent = "Loading…";
     try {
-      const res = await fetch("/api/stats?days=" + encodeURIComponent(days), { headers: { "x-analytics-token": token } });
-      if (res.status === 403) {
-        if (status) status.textContent = "Token rejected. Re-add it via #analytics.";
-        try { localStorage.removeItem(ANALYTICS_TOKEN_KEY); } catch (_) {}
-        return;
-      }
+      const token = await tokenProvider();
+      if (!token) { if (status) status.textContent = "Sign in as the site owner to view analytics."; return; }
+      const res = await fetch("/api/stats?days=" + encodeURIComponent(days), { headers: { Authorization: "Bearer " + token } });
+      if (res.status === 403) { if (status) status.textContent = "Only the site owner can view analytics."; return; }
       if (!res.ok) { if (status) status.textContent = "Couldn't load analytics (HTTP " + res.status + ")."; return; }
       const data = await res.json();
       renderAnalyticsData(data);
@@ -1600,7 +1610,6 @@
   drive.setTokenProvider(isExtensionRuntime && driveAuth ? driveAuth.tokenProvider : tokenProvider);
   populateStatusSelects();
   showSignedOut();
-  maybeRevealAnalyticsTab();
   trackEvent("pageview");
 
   if (!isExtensionRuntime && !hasValidClientId()) {
