@@ -9,11 +9,11 @@
   // Full Drive scope is intentional here: the webapp and Chrome extension use
   // different OAuth client IDs, so `drive.file` can strand them on separate
   // app-private copies of JobTrail/jobtrail-data.json.
-  // drive.file = per-file access to the app's own files only. It's a
-  // non-sensitive scope, so Google no longer shows the "unverified app"
-  // warning and no verification is required. The app still sees the JobTrail
-  // folder/file it created, so existing data is preserved.
-  const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+  // Full Drive scope is required: the extension and the webapp are separate
+  // OAuth clients that must read/write the SAME jobtrail-data.json file. Under
+  // drive.file each client only sees files IT created, which breaks that shared
+  // sync — so we keep auth/drive (the "unverified app" warning is the tradeoff).
+  const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
   const isExtensionRuntime = Boolean(runtime.isExtension && driveAuth);
 
   // In-memory dataset; Drive is the source of truth on disk.
