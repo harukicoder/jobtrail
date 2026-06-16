@@ -46,10 +46,10 @@
         <h2>Track every application from bookmark to offer</h2>
         <p>Log applications, watch your pipeline and funnel analytics, and prep interviews with AI — all in one place. Your data stays private in your own Google Drive.</p>
         <div class="signed-out-actions">
-          <button class="primary-button" id="signin-button-2" type="button">Sign in with Google</button>
-          <button class="secondary-button" id="demo-button" type="button">View live demo →</button>
+          <button class="primary-button" id="demo-button" type="button">View live demo →</button>
+          <button class="ghost-button" id="signin-button-2" type="button">Sign in with Google</button>
         </div>
-        <p class="signed-out-note">No account needed to explore the demo. When you sign in, your data syncs privately to <code>Drive/JobTrail</code>.</p>
+        <p class="signed-out-note">Just exploring? Open the live demo — no sign-in needed. Signing in is only for using this as your own job tracker (your data syncs privately to your <code>Google Drive</code>).</p>
         <p class="config-warn" id="config-warn" hidden>
           This build has no Google Client ID configured. Copy <code>config.example.js</code> to <code>config.js</code> and set <code>googleClientId</code>. See the <a href="README.md">README</a>.
         </p>
@@ -103,6 +103,20 @@
           <div class="analytics-card"><h3>Top countries</h3><ul class="an-list" id="an-countries"></ul></div>
           <div class="analytics-card"><h3>Top pages</h3><ul class="an-list" id="an-paths"></ul></div>
           <div class="analytics-card"><h3>Devices</h3><ul class="an-list" id="an-devices"></ul></div>
+        </div>
+        <div class="analytics-card analytics-visitors">
+          <div class="an-visitors-head">
+            <h3>Visitors <span class="an-count" id="an-visitor-count"></span></h3>
+            <label class="an-toggle"><input type="checkbox" id="an-hide-signins"> Hide my sign-ins</label>
+          </div>
+          <div class="an-table-wrap">
+            <table class="an-table">
+              <thead>
+                <tr><th>Visitor</th><th>Last seen</th><th>Location</th><th>Device</th><th>Lang</th><th>Source</th><th class="an-num">Visits</th></tr>
+              </thead>
+              <tbody id="an-visitor-rows"></tbody>
+            </table>
+          </div>
         </div>
         <p class="analytics-status" id="analytics-status"></p>
       </section>

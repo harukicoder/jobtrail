@@ -1505,6 +1505,7 @@
   const OWNER_EMAIL = "haruki.kimura.jp@gmail.com";
   const VISITOR_ID_KEY = "jobtrail_vid";
   let cachedUserEmail = null;
+  let lastVisitors = [];
 
   function analyticsHostable() {
     return !isExtensionRuntime && /^https?:$/.test(location.protocol);
@@ -1534,11 +1535,20 @@
   }
   function trackEvent(type) {
     if (!analyticsHostable()) return;
+    let tz = "";
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (_) { /* ignore */ }
     try {
       fetch("/api/track", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type, path: location.pathname, ref: document.referrer, sid: visitorId() }),
+        body: JSON.stringify({
+          type,
+          path: location.pathname,
+          ref: document.referrer,
+          sid: visitorId(),
+          lang: (navigator.language || "").slice(0, 12),
+          tz: tz.slice(0, 40)
+        }),
         keepalive: true
       }).catch(() => {});
     } catch (_) { /* never let tracking affect the page */ }
@@ -1583,6 +1593,49 @@
     const dev = (d && d.devices) || { mobile: 0, desktop: 0 };
     const devEl = $("an-devices");
     if (devEl) devEl.innerHTML = `<li><span>Desktop</span><strong>${num(dev.desktop)}</strong></li><li><span>Mobile</span><strong>${num(dev.mobile)}</strong></li>`;
+
+    lastVisitors = (d && d.visitors) || [];
+    renderVisitorRows();
+  }
+
+  function analyticsTimeAgo(iso) {
+    const t = new Date(iso).getTime();
+    if (!t) return "";
+    const s = Math.floor((Date.now() - t) / 1000);
+    if (s < 60) return "just now";
+    const m = Math.floor(s / 60); if (m < 60) return m + "m ago";
+    const h = Math.floor(m / 60); if (h < 24) return h + "h ago";
+    return Math.floor(h / 24) + "d ago";
+  }
+
+  function renderVisitorRows() {
+    const tbody = $("an-visitor-rows");
+    if (!tbody) return;
+    const hide = $("an-hide-signins") && $("an-hide-signins").checked;
+    const rows = (lastVisitors || []).filter((v) => !(hide && v.signedIn));
+    const count = $("an-visitor-count");
+    if (count) count.textContent = rows.length ? "· " + rows.length : "";
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="muted">No visitors in this range yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map((v) => {
+      const sid = String(v.sid || "");
+      const sidShort = "v_" + sid.replace(/^v_/, "").slice(0, 4) + "…" + sid.slice(-4);
+      const loc = [v.country, v.city].filter(Boolean).join(" · ") || v.tz || "—";
+      const dev = (v.device && v.device !== "unknown") ? v.device : "—";
+      const src = (v.source && v.source !== "direct") ? v.source : "Direct";
+      const me = v.signedIn ? '<span class="an-badge">you</span>' : "";
+      return `<tr${v.signedIn ? ' class="an-row-me"' : ""}>
+        <td class="an-sid">${escapeHtml(sidShort)}${me}</td>
+        <td title="${escapeHtml(new Date(v.lastSeen).toLocaleString())}">${escapeHtml(analyticsTimeAgo(v.lastSeen))}</td>
+        <td>${escapeHtml(loc)}</td>
+        <td>${escapeHtml(dev)}</td>
+        <td>${escapeHtml(v.lang || "—")}</td>
+        <td class="an-src" title="${escapeHtml(src)}">${escapeHtml(src)}</td>
+        <td class="an-num">${Number(v.visits || 0).toLocaleString()}</td>
+      </tr>`;
+    }).join("");
   }
 
   async function renderAnalytics() {
@@ -1604,6 +1657,7 @@
   }
 
   if ($("analytics-range")) $("analytics-range").addEventListener("change", renderAnalytics);
+  if ($("an-hide-signins")) $("an-hide-signins").addEventListener("change", renderVisitorRows);
 
   // ---------- Boot ----------
 

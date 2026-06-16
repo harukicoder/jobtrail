@@ -47,6 +47,8 @@ export default async (req, context) => {
     c: (geo.country && geo.country.code) || "",
     city: String(geo.city || "").slice(0, 80),
     d: device,
+    l: String(body.lang || "").slice(0, 12),
+    tz: String(body.tz || "").slice(0, 40),
     s: String(body.sid || "").slice(0, 40),
     ts: now.toISOString()
   };

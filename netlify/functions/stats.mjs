@@ -57,12 +57,32 @@ export default async (req) => {
   const country = {};
   const path = {};
   const devices = { mobile: 0, desktop: 0 };
+  const byVisitor = {};
   let pageviews = 0, signins = 0;
 
   events.forEach((e) => {
     const day = String(e.ts || "").slice(0, 10);
     if (!byDay[day]) byDay[day] = { day, pageviews: 0, signins: 0, visitors: new Set() };
     if (e.s) byDay[day].visitors.add(e.s);
+
+    // Per-visitor profile (one row per anonymous visitor id).
+    if (e.s) {
+      let v = byVisitor[e.s];
+      if (!v) v = byVisitor[e.s] = { sid: e.s, firstTs: e.ts, lastTs: e.ts, visits: 0, signins: 0, country: "", city: "", device: "", lang: "", tz: "", source: "", _srcTs: null };
+      if (e.ts > v.lastTs) v.lastTs = e.ts;
+      if (e.ts < v.firstTs) v.firstTs = e.ts;
+      if (e.c) v.country = e.c;
+      if (e.city) v.city = e.city;
+      if (e.d) v.device = e.d;
+      if (e.l) v.lang = e.l;
+      if (e.tz) v.tz = e.tz;
+      if (e.t === "signin") { v.signins += 1; }
+      else {
+        v.visits += 1;
+        if (v._srcTs === null || e.ts < v._srcTs) { v._srcTs = e.ts; v.source = e.r || "direct"; }
+      }
+    }
+
     if (e.t === "signin") {
       signins += 1;
       byDay[day].signins += 1;
@@ -78,6 +98,23 @@ export default async (req) => {
     }
   });
 
+  const visitorRows = Object.values(byVisitor)
+    .sort((a, b) => (a.lastTs < b.lastTs ? 1 : -1))
+    .slice(0, 100)
+    .map((v) => ({
+      sid: v.sid,
+      lastSeen: v.lastTs,
+      firstSeen: v.firstTs,
+      visits: v.visits,
+      country: v.country,
+      city: v.city,
+      tz: v.tz,
+      device: v.device || "unknown",
+      lang: v.lang,
+      source: v.source || "direct",
+      signedIn: v.signins > 0
+    }));
+
   const result = {
     rangeDays: days,
     totals: {
@@ -92,7 +129,8 @@ export default async (req) => {
     topReferrers: topN(ref, 8, "name"),
     topCountries: topN(country, 8, "code"),
     topPaths: topN(path, 8, "path"),
-    devices
+    devices,
+    visitors: visitorRows
   };
 
   return new Response(JSON.stringify(result), {
