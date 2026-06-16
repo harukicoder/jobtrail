@@ -422,6 +422,39 @@
     return `<span class="status-chip" style="--chip:${color}">${escapeHtml(label)}</span>`;
   }
 
+  // Inline status editor for the table — change a job's stage without opening
+  // the modal. data-stop-row keeps the row's click-to-edit from firing.
+  function statusSelectCell(j) {
+    const color = data.statusColor(j.status);
+    const opts = data.STATUS_ORDER.map((s) =>
+      `<option value="${s}"${s === j.status ? " selected" : ""}>${escapeHtml(data.statusLabel(s))}</option>`
+    ).join("");
+    return `<select class="row-status" data-stop-row data-id="${escapeHtml(j.id)}" style="--chip:${color}" aria-label="Status">${opts}</select>`;
+  }
+
+  function fitCell(j) {
+    if (j.aiFitAnalysis && typeof j.aiFitAnalysis.score === "number") {
+      const title = j.aiFitAnalysis.summary || "CV ↔ JD fit score";
+      return `<span class="fit-pill" style="--fit-color:${fitScoreColor(j.aiFitAnalysis.score)}" title="${escapeHtml(title)}">${j.aiFitAnalysis.score}</span>`;
+    }
+    return '<span class="cell-muted">—</span>';
+  }
+
+  async function setJobStatusInline(id, newStatus) {
+    const job = state.jobs.find((j) => j.id === id);
+    if (!job || job.status === newStatus) return;
+    const now = new Date().toISOString();
+    const merged = Object.assign({}, job, { status: newStatus, updatedAt: now });
+    merged.stageHistory = data.appendStageTransition(job.stageHistory || merged.stageHistory || [], newStatus, now);
+    state.jobs = state.jobs.map((j) => (j.id === id ? data.sanitizeJob(merged) : j));
+    renderJobs();
+    const r = await saveToDrive();
+    if (r && r.ok) {
+      window.postMessage({ type: "JOBTRAIL_SYNC_REQUEST" }, "*");
+      toast(r.localOnly ? "Status saved locally" : "Status updated");
+    }
+  }
+
   // Sortable columns: persisted to localStorage so the user's choice survives
   // refreshes. `dateApplied` desc is the sensible default — most-recent first.
   const SORT_PREF_KEY = "jobtrail_sort_pref_v1";
@@ -433,6 +466,8 @@
     { id: "contract", label: "Contract" }
   ];
   let activeTypeFilter = "all";
+  let hideRejected = false;
+  try { hideRejected = localStorage.getItem("jobtrail_hide_rejected") === "1"; } catch (_) { /* ignore */ }
   const sortState = (() => {
     try {
       const raw = localStorage.getItem(SORT_PREF_KEY);
@@ -496,6 +531,11 @@
       const ai = SORT_ORDER.indexOf(a.status); const bi = SORT_ORDER.indexOf(b.status);
       return mul * (ai - bi);
     }
+    if (key === "fit") {
+      const av = (a.aiFitAnalysis && typeof a.aiFitAnalysis.score === "number") ? a.aiFitAnalysis.score : -1;
+      const bv = (b.aiFitAnalysis && typeof b.aiFitAnalysis.score === "number") ? b.aiFitAnalysis.score : -1;
+      return mul * (av - bv);
+    }
     if (key === "dateApplied") {
       // Empty dates sort last regardless of direction so blank rows don't leap
       // to the top of an ascending sort.
@@ -534,6 +574,7 @@
     const q = (jobsSearch.value || "").trim().toLowerCase();
     const status = jobsFilterStatus.value;
     const list = liveJobs().filter((j) => {
+      if (hideRejected && j.status === "rejected") return false;
       if (status && j.status !== status) return false;
       if (activeTypeFilter !== "all" && typeBucket(j) !== activeTypeFilter) return false;
       if (!q) return true;
@@ -555,9 +596,6 @@
       const prepBadge = hasPrep ? '<span class="jd-badge" title="Interview prep saved">🎤</span>' : "";
       const letterBadge = (j.aiCoverLetter && j.aiCoverLetter.text)
         ? '<span class="jd-badge" title="AI cover letter cached">✉️</span>' : "";
-      const fitBadge = (j.aiFitAnalysis && typeof j.aiFitAnalysis.score === "number")
-        ? `<span class="fit-pill" style="--fit-color:${fitScoreColor(j.aiFitAnalysis.score)}" title="CV ↔ JD fit score">${j.aiFitAnalysis.score}</span>`
-        : "";
       return `
         <tr class="job-row" data-action="edit" data-id="${escapeHtml(j.id)}" tabindex="0" role="button" aria-label="Edit ${escapeHtml(j.jobTitle || "job")}">
           <td class="job-title-cell">
@@ -565,14 +603,14 @@
             ${j.description ? '<span class="jd-badge" title="Job description archived">📄</span>' : ""}
             ${prepBadge}
             ${letterBadge}
-            ${fitBadge}
             ${urlLink}
           </td>
           <td>${escapeHtml(j.company || "")}</td>
           <td>${escapeHtml(j.location || "")}</td>
           <td>${j.workMode ? escapeHtml(j.workMode) : '<span class="cell-muted">—</span>'}</td>
           <td>${j.jobType ? escapeHtml(j.jobType) : '<span class="cell-muted">—</span>'}</td>
-          <td>${statusChip(j.status)}</td>
+          <td>${statusSelectCell(j)}</td>
+          <td class="fit-cell">${fitCell(j)}</td>
           <td>${escapeHtml(j.dateApplied || "")}</td>
           <td>
             <div class="row-actions">
@@ -1090,6 +1128,20 @@
 
   jobsSearch.addEventListener("input", () => renderJobs());
   jobsFilterStatus.addEventListener("change", () => renderJobs());
+  const hideRejectedToggle = $("hide-rejected");
+  if (hideRejectedToggle) {
+    hideRejectedToggle.checked = hideRejected;
+    hideRejectedToggle.addEventListener("change", () => {
+      hideRejected = hideRejectedToggle.checked;
+      try { localStorage.setItem("jobtrail_hide_rejected", hideRejected ? "1" : "0"); } catch (_) { /* ignore */ }
+      renderJobs();
+    });
+  }
+  // Inline status edits from the table.
+  jobsTbody.addEventListener("change", (e) => {
+    const sel = e.target.closest("select.row-status");
+    if (sel) setJobStatusInline(sel.dataset.id, sel.value);
+  });
   if (jobTypeTabs) {
     jobTypeTabs.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-type-filter]");

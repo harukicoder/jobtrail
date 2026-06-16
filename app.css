@@ -558,6 +558,39 @@ button, input, select, textarea {
   cursor: default;
   letter-spacing: 0.02em;
 }
+.fit-cell .fit-pill { margin-left: 0; }
+
+/* Inline status editor in the table — styled like the soft status chip. */
+.row-status {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 4px 24px 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  max-width: 160px;
+  -webkit-appearance: none;
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--chip, #0f766e) 28%, #fff);
+  background-color: color-mix(in srgb, var(--chip, #0f766e) 14%, #fff);
+  color: color-mix(in srgb, var(--chip, #0f766e) 74%, #000);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' stroke='%236b7f82' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  transition: filter 120ms ease;
+}
+.row-status:hover { filter: brightness(0.97); }
+.row-status:focus-visible { outline: 2px solid var(--teal-500); outline-offset: 1px; }
+
+.hide-rejected-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-soft);
+  white-space: nowrap;
+  cursor: pointer;
+}
 
 /* Collapsible archived-JD section in the edit modal */
 .description-label-row {
