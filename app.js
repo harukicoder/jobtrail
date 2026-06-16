@@ -65,6 +65,7 @@
   const $ = (id) => document.getElementById(id);
   const signInBtn = $("signin-button");
   const signOutBtn = $("signout-button");
+  const refreshBtn = $("refresh-button");
   const syncPill = $("sync-pill");
   const exportBtn = $("export-button");
   const importBtn = $("import-button");
@@ -99,6 +100,28 @@
     syncPill.textContent = label;
     syncPill.classList.toggle("is-signed-in", state === "signed-in");
     syncPill.classList.toggle("is-syncing", state === "syncing");
+  }
+
+  // Track the last successful Drive read/write so the pill can show freshness
+  // ("Synced · 2m ago") even though background pulls are silent.
+  let lastSyncedAt = 0;
+  function syncAgoLabel() {
+    if (!lastSyncedAt) return "";
+    const s = Math.floor((Date.now() - lastSyncedAt) / 1000);
+    if (s < 60) return "just now";
+    const m = Math.floor(s / 60); if (m < 60) return m + "m ago";
+    const h = Math.floor(m / 60); if (h < 24) return h + "h ago";
+    return Math.floor(h / 24) + "d ago";
+  }
+  function updateSyncedLabel() {
+    // Only refine the steady "Synced" state — never override "Syncing…" etc.
+    if (!syncPill.classList.contains("is-signed-in") || syncPill.classList.contains("is-syncing")) return;
+    const ago = syncAgoLabel();
+    syncPill.textContent = ago ? "Synced · " + ago : "Synced";
+  }
+  function markSynced() {
+    lastSyncedAt = Date.now();
+    updateSyncedLabel();
   }
 
   let toastTimer = null;
@@ -349,6 +372,7 @@
         });
       }
       if (!silent) setSync("signed-in", "Synced");
+      markSynced();
       return;
     }
     const dataset = await drive.readData();
@@ -357,6 +381,7 @@
     applyDatasetToState(dataset);
     await mirrorStateToExtensionStorage();
     if (!silent) setSync("signed-in", "Synced");
+    markSynced();
   }
 
   // While `saveInFlight` is true we suppress the visibility/focus pull that
@@ -397,6 +422,7 @@
       await mirrorStateToExtensionStorage();
       lastSaveFailedAt = 0;
       setSync("signed-in", "Synced");
+      markSynced();
       return { ok: true, localOnly: false };
     } catch (err) {
       console.error("saveToDrive failed:", err);
@@ -1446,6 +1472,7 @@
     signInBtn.hidden = true;
     signOutBtn.hidden = false;
     if (profileBtn) profileBtn.hidden = false;
+    if (refreshBtn) refreshBtn.hidden = false;
     exportBtn.disabled = false;
     importBtn.disabled = false;
     cachedUserEmail = null; // re-check identity for the owner-only analytics tab
@@ -1460,6 +1487,7 @@
     signInBtn.hidden = false;
     signOutBtn.hidden = true;
     if (profileBtn) profileBtn.hidden = false;
+    if (refreshBtn) refreshBtn.hidden = false;
     exportBtn.disabled = false;
     importBtn.disabled = false;
     setView(currentView);
@@ -1475,6 +1503,7 @@
     signInBtn.hidden = false;
     signOutBtn.hidden = true;
     if (profileBtn) profileBtn.hidden = true;
+    if (refreshBtn) refreshBtn.hidden = true;
     exportBtn.disabled = true;
     importBtn.disabled = true;
     cachedUserEmail = null;
@@ -1518,6 +1547,7 @@
     signInBtn.hidden = true;
     signOutBtn.hidden = true;
     if (profileBtn) profileBtn.hidden = false;
+    if (refreshBtn) refreshBtn.hidden = true;
     exportBtn.disabled = false;
     importBtn.disabled = true;
     setSync("", "Demo");
@@ -1531,6 +1561,29 @@
     renderJobs();
     showSignedOut();
   }
+
+  async function manualRefresh() {
+    if (state.demo || !state.loaded) return;
+    if (isExtensionRuntime && driveAuth) {
+      const ok = await driveAuth.isSignedIn().catch(() => false);
+      if (!ok) { toast("Sign in to sync from Drive", { error: true }); return; }
+    }
+    if (refreshBtn) refreshBtn.disabled = true;
+    setSync("syncing", "Refreshing…");
+    try {
+      await loadFromDrive();
+      renderJobs();
+      toast("Up to date");
+    } catch (err) {
+      setSync("signed-in", "Sync failed — retry");
+      toast("Refresh failed: " + (err && err.message ? err.message : "network error"), { error: true });
+    } finally {
+      if (refreshBtn) refreshBtn.disabled = false;
+    }
+  }
+  if (refreshBtn) refreshBtn.addEventListener("click", manualRefresh);
+  // Keep the "Synced · Nm ago" label fresh without re-pulling.
+  setInterval(updateSyncedLabel, 30000);
 
   signInBtn.addEventListener("click", signIn);
   signOutBtn.addEventListener("click", signOut);
