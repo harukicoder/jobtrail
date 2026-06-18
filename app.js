@@ -494,6 +494,18 @@
   let activeTypeFilter = "all";
   let hideRejected = false;
   try { hideRejected = localStorage.getItem("jobtrail_hide_rejected") === "1"; } catch (_) { /* ignore */ }
+  let hideStale = false;
+  try { hideStale = localStorage.getItem("jobtrail_hide_stale") === "1"; } catch (_) { /* ignore */ }
+
+  const STALE_DAYS = 60;
+  // A "stale" application: still sitting at Applied (no interview yet) and the
+  // application date is more than ~2 months old — unlikely to hear back.
+  function isStaleApplication(j) {
+    if (j.status !== "applied" || !j.dateApplied) return false;
+    const t = Date.parse(j.dateApplied);
+    if (isNaN(t)) return false;
+    return (Date.now() - t) / 86400000 > STALE_DAYS;
+  }
   const sortState = (() => {
     try {
       const raw = localStorage.getItem(SORT_PREF_KEY);
@@ -601,6 +613,7 @@
     const status = jobsFilterStatus.value;
     const list = liveJobs().filter((j) => {
       if (hideRejected && j.status === "rejected") return false;
+      if (hideStale && isStaleApplication(j)) return false;
       if (status && j.status !== status) return false;
       if (activeTypeFilter !== "all" && typeBucket(j) !== activeTypeFilter) return false;
       if (!q) return true;
@@ -1160,6 +1173,15 @@
     hideRejectedToggle.addEventListener("change", () => {
       hideRejected = hideRejectedToggle.checked;
       try { localStorage.setItem("jobtrail_hide_rejected", hideRejected ? "1" : "0"); } catch (_) { /* ignore */ }
+      renderJobs();
+    });
+  }
+  const hideStaleToggle = $("hide-stale");
+  if (hideStaleToggle) {
+    hideStaleToggle.checked = hideStale;
+    hideStaleToggle.addEventListener("change", () => {
+      hideStale = hideStaleToggle.checked;
+      try { localStorage.setItem("jobtrail_hide_stale", hideStale ? "1" : "0"); } catch (_) { /* ignore */ }
       renderJobs();
     });
   }
