@@ -463,6 +463,46 @@
     );
   }
 
+  // Heuristic remote-eligibility check. Given a job and the user's home
+  // country/region, decide whether it's remote and whether someone there could
+  // likely take it. Conservative: only flags "restricted" on strong signals.
+  // Returns { remote, eligibility: "eligible"|"restricted"|"unknown", reason }.
+  const OPEN_REGION_RE = /\b(world\s?wide|anywhere|fully\s+remote\s+global|global(ly)?|emea|europe|european union|eu(\b|\s)|uk\b|united kingdom|england|britain|gmt|bst|cet)\b/i;
+  function assessRemoteEligibility(job, homeCountry, candidateLocation) {
+    job = job || {};
+    const home = String(homeCountry || "").toLowerCase().trim();
+    // Remotive jobs carry the accepted region in candidate_required_location;
+    // fall back to the explicit arg for callers that pass it directly.
+    const candidateLoc = candidateLocation || job.candidate_required_location || "";
+    const reqLoc = String(candidateLoc).toLowerCase().trim();
+    const hay = [job.workMode, job.location, candidateLoc, job.description]
+      .map((x) => String(x || "")).join("  ").toLowerCase();
+
+    const remote = /\bremote\b|work from home|\bwfh\b|distributed team|remote-first/.test(hay);
+    if (!remote) return { remote: false, eligibility: "unknown", reason: "" };
+
+    // Remotive's candidate_required_location is the cleanest signal when present.
+    if (reqLoc) {
+      if (/worldwide|anywhere/.test(reqLoc)) return { remote: true, eligibility: "eligible", reason: "Open worldwide" };
+      const homeTokens = ["uk", "united kingdom", "britain", "england", "europe", "emea", "eu"];
+      if (home && reqLoc.indexOf(home.replace(/^.*,\s*/, "")) !== -1) return { remote: true, eligibility: "eligible", reason: "Your region is accepted" };
+      if (homeTokens.some((t) => reqLoc.indexOf(t) !== -1)) return { remote: true, eligibility: "eligible", reason: "UK/Europe accepted" };
+      // A specific location list that doesn't include the user.
+      if (/usa|united states|u\.s\.|americas|canada|latam|apac|australia|india/.test(reqLoc)) {
+        return { remote: true, eligibility: "restricted", reason: "Region: " + candidateLoc };
+      }
+    }
+
+    const usOnly = /\b(u\.?s\.?a?|united states)[\s-]*(only|based|residents?|citizens?)\b|(only|must).{0,40}(united states|u\.?s\.?\b)|authori[sz]ed to work in the (us|united states)|\bus[\s-]?based\b/i.test(hay);
+    const usStates = /\b(only|must|located|based|reside).{0,60}(alabama|alaska|arizona|texas|california|new york|washington|states listed)\b/i.test(hay);
+    const homeMentioned = home && hay.indexOf(home.replace(/^.*,\s*/, "")) !== -1;
+    if (homeMentioned || OPEN_REGION_RE.test(hay)) return { remote: true, eligibility: "eligible", reason: "Open to your region" };
+    if (usOnly || usStates) return { remote: true, eligibility: "restricted", reason: "US-only role" };
+    const otherLock = /\b(must be (located|based)|residents? of|eligible to work in|authori[sz]ed to work in|located within)\b/i.test(hay);
+    if (otherLock) return { remote: true, eligibility: "restricted", reason: "Region-restricted — check details" };
+    return { remote: true, eligibility: "unknown", reason: "Remote — region unclear" };
+  }
+
   function sanitizeJob(input) {
     const now = new Date().toISOString();
     const url = input.url ? String(input.url).trim() : "";
@@ -1398,6 +1438,7 @@
     countAutofillMappings,
     countByStatus,
     hasInterviewPrepContent,
+    assessRemoteEligibility,
     hashCoverLetterInputs,
     AI_PROVIDERS,
     AI_DEFAULT_MODEL,

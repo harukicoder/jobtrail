@@ -466,6 +466,14 @@
     return '<span class="cell-muted">—</span>';
   }
 
+  function homeCountry() {
+    const p = state.profile || {};
+    return String(p.country || p.location || "").trim();
+  }
+  function jobEligibility(j) {
+    return data.assessRemoteEligibility(j, homeCountry());
+  }
+
   async function setJobStatusInline(id, newStatus) {
     const job = state.jobs.find((j) => j.id === id);
     if (!job || job.status === newStatus) return;
@@ -496,6 +504,10 @@
   try { hideRejected = localStorage.getItem("jobtrail_hide_rejected") === "1"; } catch (_) { /* ignore */ }
   let hideStale = false;
   try { hideStale = localStorage.getItem("jobtrail_hide_stale") === "1"; } catch (_) { /* ignore */ }
+  let remoteOnly = false;
+  try { remoteOnly = localStorage.getItem("jobtrail_remote_only") === "1"; } catch (_) { /* ignore */ }
+  let hideRestricted = false;
+  try { hideRestricted = localStorage.getItem("jobtrail_hide_restricted") === "1"; } catch (_) { /* ignore */ }
 
   const STALE_DAYS = 60;
   // A "stale" application: still sitting at Applied (no interview yet) and the
@@ -614,6 +626,11 @@
     const list = liveJobs().filter((j) => {
       if (hideRejected && j.status === "rejected") return false;
       if (hideStale && isStaleApplication(j)) return false;
+      if (remoteOnly || hideRestricted) {
+        const e = jobEligibility(j);
+        if (remoteOnly && !e.remote) return false;
+        if (hideRestricted && e.eligibility === "restricted") return false;
+      }
       if (status && j.status !== status) return false;
       if (activeTypeFilter !== "all" && typeBucket(j) !== activeTypeFilter) return false;
       if (!q) return true;
@@ -637,6 +654,10 @@
       const interviewsBadge = ivCount
         ? `<span class="jd-badge" title="${ivCount} interview round${ivCount === 1 ? "" : "s"} logged">🗂️${ivCount}</span>`
         : "";
+      const elig = jobEligibility(j);
+      const remoteBadge = elig.eligibility === "restricted"
+        ? `<span class="jd-badge badge-warn" title="${escapeHtml(elig.reason || "Region-restricted")}">⚠ region</span>`
+        : "";
       const letterBadge = (j.aiCoverLetter && j.aiCoverLetter.text)
         ? '<span class="jd-badge" title="AI cover letter cached">✉️</span>' : "";
       return `
@@ -646,6 +667,7 @@
             ${j.description ? '<span class="jd-badge" title="Job description archived">📄</span>' : ""}
             ${prepBadge}
             ${interviewsBadge}
+            ${remoteBadge}
             ${letterBadge}
             ${urlLink}
           </td>
@@ -821,12 +843,14 @@
   // ---------- View switching ----------
 
   function setView(view) {
-    currentView = (view === "funnel" || view === "analytics") ? view : "pipeline";
+    currentView = (view === "funnel" || view === "analytics" || view === "discover") ? view : "pipeline";
     document.querySelectorAll(".view-tab").forEach((btn) => {
       btn.classList.toggle("is-active", btn.dataset.view === currentView);
     });
     const analyticsSection = $("analytics-section");
+    const discoverSection = $("discover-section");
     if (analyticsSection) analyticsSection.hidden = currentView !== "analytics";
+    if (discoverSection) discoverSection.hidden = currentView !== "discover";
     if (currentView === "analytics") {
       jobsSection.hidden = true;
       funnelSection.hidden = true;
@@ -835,9 +859,14 @@
       jobsSection.hidden = true;
       funnelSection.hidden = false;
       renderFunnel();
+    } else if (currentView === "discover") {
+      jobsSection.hidden = true;
+      funnelSection.hidden = true;
+      onEnterDiscover();
     } else {
       funnelSection.hidden = true;
       jobsSection.hidden = false;
+      renderJobs();
     }
   }
 
@@ -846,6 +875,447 @@
       const btn = e.target.closest(".view-tab");
       if (!btn) return;
       setView(btn.dataset.view);
+    });
+  }
+
+  // ---- Discover feed + saved searches -------------------------------------
+  // Pulls live remote roles via /api/discover (Remotive proxy), flags
+  // eligibility for the user's region, lets them one-click "Track" a role into
+  // the pipeline, and remembers saved searches so new matches can be surfaced.
+  const SAVED_SEARCHES_KEY = "jobtrail_saved_searches";
+  let savedSearches = loadSavedSearches();
+  let discoverResults = [];
+  let discoverLoadedOnce = false;
+  let discoverActiveSavedId = null;
+
+  function loadSavedSearches() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(SAVED_SEARCHES_KEY) || "[]");
+      return Array.isArray(raw) ? raw.filter((s) => s && typeof s.search === "string") : [];
+    } catch (_) { return []; }
+  }
+  function persistSavedSearches() {
+    try { localStorage.setItem(SAVED_SEARCHES_KEY, JSON.stringify(savedSearches)); } catch (_) { /* ignore */ }
+  }
+  function searchLabel(s) {
+    const parts = [];
+    if (s.search) parts.push(`"${s.search}"`);
+    if (s.category) {
+      const opt = $("discover-category") && [...$("discover-category").options].find((o) => o.value === s.category);
+      parts.push(opt ? opt.textContent : s.category);
+    }
+    if (s.eligibleOnly) parts.push("eligible only");
+    return parts.join(" · ") || "All remote jobs";
+  }
+  function searchKey(s) {
+    return `${(s.category || "").toLowerCase()}|${(s.search || "").toLowerCase()}|${s.eligibleOnly ? 1 : 0}`;
+  }
+
+  async function fetchDiscover({ search, category, limit }) {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (category) params.set("category", category);
+    params.set("limit", String(limit || 30));
+    const res = await fetch("/api/discover?" + params.toString(), { headers: { accept: "application/json" } });
+    if (!res.ok) throw new Error("discover_http_" + res.status);
+    const data = await res.json();
+    return Array.isArray(data.jobs) ? data.jobs : [];
+  }
+
+  function alreadyTracked(remoteJob) {
+    const url = String(remoteJob.url || "").toLowerCase();
+    const title = data.normalizeText(remoteJob.title || "");
+    const company = data.normalizeText(remoteJob.company || "");
+    return (state.jobs || []).some((j) => {
+      if (j.deletedAt) return false;
+      if (url && String(j.url || "").toLowerCase() === url) return true;
+      return title && company && j.titleFingerprint === title && j.companyFingerprint === company;
+    });
+  }
+
+  function discoverCardHtml(rj) {
+    const elig = data.assessRemoteEligibility(rj, homeCountry());
+    let badge = "";
+    if (elig.eligibility === "restricted") {
+      badge = `<span class="disc-badge disc-warn" title="${escapeHtml(elig.reason || "Region-restricted")}">⚠ ${escapeHtml(elig.reason || "Region-locked")}</span>`;
+    } else if (elig.eligibility === "eligible") {
+      badge = `<span class="disc-badge disc-ok" title="${escapeHtml(elig.reason || "Open to your region")}">✓ You can apply</span>`;
+    } else {
+      badge = `<span class="disc-badge disc-unknown">Region unclear</span>`;
+    }
+    const loc = rj.candidate_required_location || "Remote";
+    const tracked = alreadyTracked(rj);
+    const trackBtn = tracked
+      ? `<button class="ghost-button" disabled>✓ Tracked</button>`
+      : `<button class="primary-button" data-action="track-discover" data-id="${escapeHtml(rj.id)}">+ Track</button>`;
+    const published = rj.publishedAt ? formatRelative(rj.publishedAt) : "";
+    return `
+      <article class="disc-card" data-elig="${elig.eligibility}">
+        <div class="disc-card-head">
+          <div class="disc-card-title">
+            <strong>${escapeHtml(rj.title || "(untitled)")}</strong>
+            <span class="disc-company">${escapeHtml(rj.company || "")}</span>
+          </div>
+          ${badge}
+        </div>
+        <div class="disc-meta">
+          <span title="Accepted location">📍 ${escapeHtml(loc)}</span>
+          ${rj.jobType ? `<span>• ${escapeHtml(rj.jobType.replace(/_/g, " "))}</span>` : ""}
+          ${rj.salary ? `<span>• ${escapeHtml(rj.salary)}</span>` : ""}
+          ${published ? `<span>• ${escapeHtml(published)}</span>` : ""}
+        </div>
+        <div class="disc-actions">
+          <a class="ghost-button" href="${escapeHtml(rj.url)}" target="_blank" rel="noopener noreferrer">View posting ↗</a>
+          ${trackBtn}
+        </div>
+      </article>`;
+  }
+
+  function formatRelative(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+    if (days <= 0) return "today";
+    if (days === 1) return "1 day ago";
+    if (days < 30) return days + " days ago";
+    const months = Math.floor(days / 30);
+    return months === 1 ? "1 month ago" : months + " months ago";
+  }
+
+  function renderDiscoverResults() {
+    const grid = $("discover-grid");
+    const status = $("discover-status");
+    if (!grid) return;
+    const eligibleOnly = $("discover-eligible-only") && $("discover-eligible-only").checked;
+    let list = discoverResults;
+    if (eligibleOnly) {
+      list = list.filter((rj) => data.assessRemoteEligibility(rj, homeCountry()).eligibility !== "restricted");
+    }
+    if (!list.length) {
+      grid.innerHTML = "";
+      if (status) status.textContent = discoverResults.length
+        ? "No roles open to your region in these results. Untick “Eligible only” to see all."
+        : "No roles found. Try a different search or category.";
+      return;
+    }
+    if (status) {
+      const restricted = discoverResults.filter((rj) => data.assessRemoteEligibility(rj, homeCountry()).eligibility === "restricted").length;
+      status.textContent = `${list.length} role${list.length === 1 ? "" : "s"} shown`
+        + (restricted && !eligibleOnly ? ` · ${restricted} region-locked` : "");
+    }
+    grid.innerHTML = list.map(discoverCardHtml).join("");
+  }
+
+  async function runDiscover({ search, category, eligibleOnly, savedId } = {}) {
+    const grid = $("discover-grid");
+    const status = $("discover-status");
+    const searchEl = $("discover-search");
+    const catEl = $("discover-category");
+    const eligEl = $("discover-eligible-only");
+    if (search != null && searchEl) searchEl.value = search;
+    if (category != null && catEl) catEl.value = category;
+    if (eligibleOnly != null && eligEl) eligEl.checked = eligibleOnly;
+    discoverActiveSavedId = savedId || null;
+
+    const q = {
+      search: (searchEl && searchEl.value || "").trim(),
+      category: (catEl && catEl.value) || "",
+      limit: 40
+    };
+    if (status) status.textContent = "Searching live remote roles…";
+    if (grid) grid.innerHTML = "";
+    discoverLoadedOnce = true;
+    try {
+      discoverResults = await fetchDiscover(q);
+      // If this came from / matches a saved search, mark its current results seen.
+      markSavedSearchSeen(q, discoverResults);
+      renderDiscoverResults();
+    } catch (err) {
+      discoverResults = [];
+      if (status) status.textContent = "Couldn't load remote jobs right now. This needs the live site (Netlify functions) — it won't work from a local file preview.";
+      console.error("Discover fetch failed:", err);
+    }
+  }
+
+  function saveCurrentSearch() {
+    const searchEl = $("discover-search");
+    const catEl = $("discover-category");
+    const eligEl = $("discover-eligible-only");
+    const entry = {
+      id: data.generateId ? data.generateId() : String(Date.now()),
+      search: (searchEl && searchEl.value || "").trim(),
+      category: (catEl && catEl.value) || "",
+      eligibleOnly: !!(eligEl && eligEl.checked),
+      seenIds: discoverResults.map((rj) => rj.id),
+      newCount: 0,
+      createdAt: new Date().toISOString()
+    };
+    if (!entry.search && !entry.category) {
+      toast("Add a keyword or category before saving a search.", { error: true });
+      return;
+    }
+    const key = searchKey(entry);
+    if (savedSearches.some((s) => searchKey(s) === key)) {
+      toast("You've already saved this search.");
+      return;
+    }
+    savedSearches.unshift(entry);
+    persistSavedSearches();
+    renderSavedSearches();
+    toast("Search saved. We'll flag new matches.");
+    // Opt-in: ask once, at this natural moment, so we can ping on new matches
+    // even when the user is on another tab. Best-effort — never blocks.
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "default") {
+        Notification.requestPermission().catch(() => {});
+      }
+    } catch (_) { /* ignore */ }
+  }
+
+  function deleteSavedSearch(id) {
+    savedSearches = savedSearches.filter((s) => s.id !== id);
+    persistSavedSearches();
+    renderSavedSearches();
+    updateDiscoverDot();
+  }
+
+  function renderSavedSearches() {
+    const wrap = $("saved-searches");
+    if (!wrap) return;
+    if (!savedSearches.length) { wrap.hidden = true; wrap.innerHTML = ""; return; }
+    wrap.hidden = false;
+    wrap.innerHTML = `<span class="saved-label">Saved searches</span>` + savedSearches.map((s) => {
+      const dot = s.newCount > 0 ? `<span class="saved-new" title="${s.newCount} new since you last looked">${s.newCount} new</span>` : "";
+      return `<span class="saved-chip${s.id === discoverActiveSavedId ? " is-active" : ""}" data-saved-id="${escapeHtml(s.id)}">
+        <button type="button" class="saved-run" data-action="run-saved" data-id="${escapeHtml(s.id)}">${escapeHtml(searchLabel(s))}</button>
+        ${dot}
+        <button type="button" class="saved-del" data-action="del-saved" data-id="${escapeHtml(s.id)}" title="Remove saved search">×</button>
+      </span>`;
+    }).join("");
+  }
+
+  // Compare freshly fetched results against what a saved search last saw.
+  function markSavedSearchSeen(query, jobs) {
+    const key = searchKey({ search: query.search, category: query.category, eligibleOnly: false });
+    let changed = false;
+    savedSearches.forEach((s) => {
+      if (searchKey({ search: s.search, category: s.category, eligibleOnly: false }) !== key) return;
+      s.seenIds = jobs.map((rj) => rj.id);
+      if (s.newCount) { s.newCount = 0; changed = true; }
+    });
+    if (changed) { persistSavedSearches(); renderSavedSearches(); updateDiscoverDot(); }
+  }
+
+  // Background refresh: quietly re-run each saved search and count unseen ids.
+  async function refreshSavedSearchCounts() {
+    if (!savedSearches.length) return;
+    let changed = false;
+    let totalNew = 0;
+    await Promise.all(savedSearches.map(async (s) => {
+      try {
+        const jobs = await fetchDiscover({ search: s.search, category: s.category, limit: 40 });
+        const seen = new Set(s.seenIds || []);
+        const fresh = jobs.filter((rj) => !seen.has(rj.id));
+        const n = fresh.length;
+        totalNew += n;
+        if (n !== s.newCount) { s.newCount = n; changed = true; }
+      } catch (_) { /* leave count as-is on network error */ }
+    }));
+    if (changed) {
+      persistSavedSearches();
+      renderSavedSearches();
+      updateDiscoverDot();
+      notifyNewMatches(totalNew);
+    }
+  }
+
+  // Best-effort desktop ping when saved searches surface new roles. Only fires
+  // if the user already granted permission (we ask at save time), so it never
+  // nags. Falls back silently to the in-app dot/count.
+  function notifyNewMatches(total) {
+    if (!total) return;
+    try {
+      if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+      const n = new Notification("JobTrail · new remote matches", {
+        body: `${total} new role${total === 1 ? "" : "s"} match your saved searches.`,
+        tag: "jobtrail-discover"
+      });
+      n.onclick = () => { window.focus(); setView("discover"); n.close(); };
+    } catch (_) { /* ignore */ }
+  }
+
+  function updateDiscoverDot() {
+    const dot = $("discover-dot");
+    if (!dot) return;
+    const total = savedSearches.reduce((n, s) => n + (s.newCount || 0), 0);
+    dot.hidden = total === 0;
+    dot.textContent = total > 0 ? String(total) : "";
+  }
+
+  function findDiscoverJob(id) {
+    return discoverResults.find((r) => r.id === id) || dailyPicks.find((r) => r.id === id);
+  }
+
+  function trackDiscoverJob(id) {
+    const rj = findDiscoverJob(id);
+    if (!rj) return;
+    if (alreadyTracked(rj)) { toast("Already in your pipeline."); return; }
+    const elig = data.assessRemoteEligibility(rj, homeCountry());
+    const sanitized = data.sanitizeJob({
+      jobTitle: rj.title,
+      company: rj.company,
+      url: rj.url,
+      workMode: "Remote",
+      location: rj.candidate_required_location || "Remote",
+      jobType: (rj.jobType || "").replace(/_/g, " "),
+      salary: rj.salary || "",
+      description: rj.description || "",
+      status: "bookmarked",
+      notes: elig.eligibility === "restricted" ? `⚠ Region note: ${elig.reason}` : ""
+    });
+    state.jobs.unshift(sanitized);
+    renderDiscoverResults();
+    renderDailyPicks();
+    if (currentView === "pipeline") renderJobs();
+    saveToDrive().then((r) => {
+      if (!r.ok) return;
+      window.postMessage({ type: "JOBTRAIL_SYNC_REQUEST" }, "*");
+      toast(r.localOnly ? "Tracked locally" : "Tracked to pipeline");
+    });
+  }
+
+  // ---- Today's picks: a once-per-day curated batch of remote roles ---------
+  // Runs client-side (no server cron can write to your Drive), but the cadence
+  // is identical from your side: the first time you open the app on a new
+  // calendar day, we fetch a fresh batch, filter it, and cache it for the day.
+  const DAILY_PICKS_KEY = "jobtrail_daily_picks";
+  const DAILY_TARGET = 15;
+  const SALARY_FLOOR_GBP = 25000;
+  let dailyPicks = [];
+
+  function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+  // Best-effort annual-GBP estimate from Remotive's free-text salary strings
+  // (e.g. "$120k - $150k", "£40,000", "€50k / year", "$30/hr"). Returns null
+  // when nothing parseable is present — callers treat null as "unknown, keep".
+  function parseAnnualGbp(salaryRaw) {
+    const s = String(salaryRaw || "").toLowerCase();
+    if (!s) return null;
+    let fx = 1; // assume GBP unless a foreign symbol/code appears
+    if (s.includes("$") || /\busd\b|\bcad\b|\baud\b/.test(s)) fx = 0.79;
+    else if (s.includes("€") || /\beur\b/.test(s)) fx = 0.85;
+    const nums = [];
+    const re = /(\d[\d,.]*)\s*(k)?/g;
+    let m;
+    while ((m = re.exec(s))) {
+      let n = parseFloat(m[1].replace(/,/g, ""));
+      if (isNaN(n)) continue;
+      if (m[2]) n *= 1000;
+      if (n > 0) nums.push(n);
+    }
+    if (!nums.length) return null;
+    let val = Math.max.apply(null, nums);
+    if (/\bhour\b|\bhourly\b|\/hr\b|\/h\b|per hour|an hour/.test(s)) val *= 2080;
+    else if (/\bmonth\b|\bmonthly\b|\/mo\b|per month|a month/.test(s)) val *= 12;
+    else if (/\bday\b|\bdaily\b|per day|a day/.test(s)) val *= 220;
+    return val * fx;
+  }
+
+  // Your chosen daily rules: drop region-locked (US-only etc.) roles, and drop
+  // roles whose listed pay is below the floor. Unlisted salary is kept.
+  function passesDailyFilter(rj) {
+    const elig = data.assessRemoteEligibility(rj, homeCountry());
+    if (elig.eligibility === "restricted") return false;
+    const gbp = parseAnnualGbp(rj.salary);
+    if (gbp != null && gbp < SALARY_FLOOR_GBP) return false;
+    return true;
+  }
+
+  function renderDailyPicks() {
+    const grid = $("daily-grid");
+    const status = $("daily-status");
+    const count = $("daily-count");
+    if (!grid) return;
+    if (!dailyPicks.length) {
+      grid.innerHTML = "";
+      if (count) count.textContent = "";
+      return;
+    }
+    if (count) count.textContent = `· ${dailyPicks.length}`;
+    if (status) status.textContent = `${dailyPicks.length} fresh remote role${dailyPicks.length === 1 ? "" : "s"} for ${todayStr()} — region-locked and under £${(SALARY_FLOOR_GBP / 1000)}k roles filtered out.`;
+    grid.innerHTML = dailyPicks.map(discoverCardHtml).join("");
+  }
+
+  async function loadDailyPicks(force) {
+    const status = $("daily-status");
+    if (!force) {
+      let cached = null;
+      try { cached = JSON.parse(localStorage.getItem(DAILY_PICKS_KEY) || "null"); } catch (_) { cached = null; }
+      if (cached && cached.date === todayStr() && Array.isArray(cached.jobs) && cached.jobs.length) {
+        dailyPicks = cached.jobs;
+        renderDailyPicks();
+        return;
+      }
+    }
+    if (status) status.textContent = "Fetching today's remote picks…";
+    try {
+      // Pull the latest broad batch, then filter down to the target count.
+      const jobs = await fetchDiscover({ limit: 50 });
+      dailyPicks = jobs.filter(passesDailyFilter).slice(0, DAILY_TARGET);
+      try { localStorage.setItem(DAILY_PICKS_KEY, JSON.stringify({ date: todayStr(), jobs: dailyPicks })); } catch (_) { /* ignore quota */ }
+      renderDailyPicks();
+    } catch (err) {
+      dailyPicks = [];
+      if (status) status.textContent = "Couldn't load today's picks right now. This needs the live site (Netlify functions) — it won't work from a local file preview.";
+      console.error("Daily picks fetch failed:", err);
+    }
+  }
+
+  function onEnterDiscover() {
+    renderSavedSearches();
+    updateDiscoverDot();
+    loadDailyPicks(false);
+  }
+
+  const discoverForm = $("discover-form");
+  if (discoverForm) {
+    discoverForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      runDiscover({});
+    });
+  }
+  const discoverEligEl = $("discover-eligible-only");
+  if (discoverEligEl) discoverEligEl.addEventListener("change", renderDiscoverResults);
+  const discoverSaveBtn = $("discover-save-btn");
+  if (discoverSaveBtn) discoverSaveBtn.addEventListener("click", saveCurrentSearch);
+
+  const discoverGrid = $("discover-grid");
+  if (discoverGrid) {
+    discoverGrid.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-action='track-discover']");
+      if (btn) trackDiscoverJob(btn.dataset.id);
+    });
+  }
+  const dailyGrid = $("daily-grid");
+  if (dailyGrid) {
+    dailyGrid.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-action='track-discover']");
+      if (btn) trackDiscoverJob(btn.dataset.id);
+    });
+  }
+  const dailyRefreshBtn = $("daily-refresh");
+  if (dailyRefreshBtn) dailyRefreshBtn.addEventListener("click", () => loadDailyPicks(true));
+  const savedSearchesEl = $("saved-searches");
+  if (savedSearchesEl) {
+    savedSearchesEl.addEventListener("click", (e) => {
+      const runBtn = e.target.closest("[data-action='run-saved']");
+      if (runBtn) {
+        const s = savedSearches.find((x) => x.id === runBtn.dataset.id);
+        if (s) runDiscover({ search: s.search, category: s.category, eligibleOnly: s.eligibleOnly, savedId: s.id });
+        return;
+      }
+      const delBtn = e.target.closest("[data-action='del-saved']");
+      if (delBtn) deleteSavedSearch(delBtn.dataset.id);
     });
   }
 
@@ -1258,6 +1728,24 @@
       renderJobs();
     });
   }
+  const remoteOnlyToggle = $("remote-only");
+  if (remoteOnlyToggle) {
+    remoteOnlyToggle.checked = remoteOnly;
+    remoteOnlyToggle.addEventListener("change", () => {
+      remoteOnly = remoteOnlyToggle.checked;
+      try { localStorage.setItem("jobtrail_remote_only", remoteOnly ? "1" : "0"); } catch (_) { /* ignore */ }
+      renderJobs();
+    });
+  }
+  const hideRestrictedToggle = $("hide-restricted");
+  if (hideRestrictedToggle) {
+    hideRestrictedToggle.checked = hideRestricted;
+    hideRestrictedToggle.addEventListener("change", () => {
+      hideRestricted = hideRestrictedToggle.checked;
+      try { localStorage.setItem("jobtrail_hide_restricted", hideRestricted ? "1" : "0"); } catch (_) { /* ignore */ }
+      renderJobs();
+    });
+  }
   // Inline status edits from the table.
   jobsTbody.addEventListener("change", (e) => {
     const sel = e.target.closest("select.row-status");
@@ -1573,6 +2061,7 @@
     cachedUserEmail = null; // re-check identity for the owner-only analytics tab
     maybeRevealAnalyticsTab();
     setView(currentView);
+    refreshSavedSearchCounts();
   }
 
   function showExtensionLocalMode() {
@@ -1586,6 +2075,7 @@
     exportBtn.disabled = false;
     importBtn.disabled = false;
     setView(currentView);
+    refreshSavedSearchCounts();
   }
 
   function showSignedOut() {

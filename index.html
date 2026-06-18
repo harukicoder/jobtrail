@@ -76,6 +76,7 @@
 
       <nav class="view-tabs" id="view-tabs" hidden>
         <button type="button" class="view-tab is-active" data-view="pipeline">Pipeline</button>
+        <button type="button" class="view-tab" data-view="discover">Discover<span class="tab-dot" id="discover-dot" hidden></span></button>
         <button type="button" class="view-tab" data-view="funnel">Funnel analytics</button>
         <button type="button" class="view-tab" data-view="analytics" id="analytics-tab" hidden>Site analytics</button>
       </nav>
@@ -125,6 +126,51 @@
         <p class="analytics-status" id="analytics-status"></p>
       </section>
 
+      <section class="discover-section" id="discover-section" hidden>
+        <div class="discover-head">
+          <div>
+            <h2>Discover remote jobs</h2>
+            <p class="funnel-sub">Live remote roles from Remotive. We flag which ones are open to your region so you don't chase region-locked listings.</p>
+          </div>
+        </div>
+
+        <div class="daily-picks" id="daily-picks-wrap">
+          <div class="daily-head">
+            <h3>Today's picks <span class="daily-count" id="daily-count"></span></h3>
+            <button class="ghost-button" id="daily-refresh" type="button" title="Fetch a fresh set of remote roles">↻ Refresh</button>
+          </div>
+          <p class="discover-status" id="daily-status">Loading today's remote picks…</p>
+          <div class="discover-grid" id="daily-grid"></div>
+        </div>
+
+        <div class="discover-divider"><span>Or search all remote jobs</span></div>
+
+        <form class="discover-controls" id="discover-form">
+          <input type="search" id="discover-search" placeholder="Search role, skill, keyword… (e.g. product manager)">
+          <select id="discover-category" aria-label="Category">
+            <option value="">All categories</option>
+            <option value="software-dev">Software Development</option>
+            <option value="product">Product</option>
+            <option value="design">Design</option>
+            <option value="data">Data Analysis</option>
+            <option value="devops">DevOps / Sysadmin</option>
+            <option value="marketing">Marketing</option>
+            <option value="sales">Sales / Business</option>
+            <option value="customer-support">Customer Service</option>
+            <option value="finance-legal">Finance / Legal</option>
+            <option value="hr">Human Resources</option>
+            <option value="writing">Writing</option>
+            <option value="all-others">All others</option>
+          </select>
+          <label class="hide-rejected-toggle" title="Hide roles restricted to regions you can't work in"><input type="checkbox" id="discover-eligible-only"> Eligible only</label>
+          <button class="primary-button" id="discover-search-btn" type="submit">Search</button>
+          <button class="ghost-button" id="discover-save-btn" type="button" title="Save this search to revisit and get new-match alerts">★ Save search</button>
+        </form>
+        <div class="saved-searches" id="saved-searches" hidden></div>
+        <p class="discover-status" id="discover-status">Search above, or pick a saved search, to see live remote roles.</p>
+        <div class="discover-grid" id="discover-grid"></div>
+      </section>
+
       <section class="funnel-section" id="funnel-section" hidden>
         <div class="funnel-head">
           <h2>Funnel</h2>
@@ -154,6 +200,8 @@
             </select>
             <label class="hide-rejected-toggle"><input type="checkbox" id="hide-rejected"> Hide rejected</label>
             <label class="hide-rejected-toggle" title="Hide applications submitted over 2 months ago with no response"><input type="checkbox" id="hide-stale"> Hide stale</label>
+            <label class="hide-rejected-toggle" title="Show only remote roles"><input type="checkbox" id="remote-only"> Remote only</label>
+            <label class="hide-rejected-toggle" title="Hide remote roles restricted to regions you can't work in"><input type="checkbox" id="hide-restricted"> Hide region-locked</label>
             <button class="primary-button" id="add-job-button" type="button">Add job</button>
           </div>
         </div>
