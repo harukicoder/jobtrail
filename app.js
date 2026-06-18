@@ -633,6 +633,10 @@
         : "";
       const hasPrep = data.hasInterviewPrepContent && data.hasInterviewPrepContent(j.interviewPrep);
       const prepBadge = hasPrep ? '<span class="jd-badge" title="Interview prep saved">🎤</span>' : "";
+      const ivCount = Array.isArray(j.interviews) ? j.interviews.length : 0;
+      const interviewsBadge = ivCount
+        ? `<span class="jd-badge" title="${ivCount} interview round${ivCount === 1 ? "" : "s"} logged">🗂️${ivCount}</span>`
+        : "";
       const letterBadge = (j.aiCoverLetter && j.aiCoverLetter.text)
         ? '<span class="jd-badge" title="AI cover letter cached">✉️</span>' : "";
       return `
@@ -641,6 +645,7 @@
             <strong>${escapeHtml(j.jobTitle || "(untitled)")}</strong>
             ${j.description ? '<span class="jd-badge" title="Job description archived">📄</span>' : ""}
             ${prepBadge}
+            ${interviewsBadge}
             ${letterBadge}
             ${urlLink}
           </td>
@@ -854,6 +859,33 @@
 
   // ---------- Modal ----------
 
+  // Interview rounds: a per-job list, each row a label + date + its own notes.
+  function interviewRowHtml(iv) {
+    iv = iv || {};
+    return `<div class="interview-round" data-interview>
+      <div class="interview-round-head">
+        <input class="iv-label" type="text" placeholder="Round — e.g. Recruiter screen, Tech, Final" value="${escapeHtml(iv.label || "")}">
+        <input class="iv-date" type="datetime-local" value="${escapeHtml(iv.date || "")}">
+        <button type="button" class="iv-remove" title="Remove round" aria-label="Remove round">✕</button>
+      </div>
+      <textarea class="iv-notes" rows="3" placeholder="Notes — who you met, questions asked, how it went, follow-ups…">${escapeHtml(iv.notes || "")}</textarea>
+    </div>`;
+  }
+  function renderInterviews(list) {
+    const wrap = $("interviews-list");
+    if (!wrap) return;
+    wrap.innerHTML = (Array.isArray(list) ? list : []).map(interviewRowHtml).join("");
+  }
+  function readInterviews() {
+    const wrap = $("interviews-list");
+    if (!wrap) return [];
+    return Array.from(wrap.querySelectorAll(".interview-round")).map((row) => ({
+      label: (row.querySelector(".iv-label") || {}).value || "",
+      date: (row.querySelector(".iv-date") || {}).value || "",
+      notes: (row.querySelector(".iv-notes") || {}).value || ""
+    }));
+  }
+
   function openModal(job) {
     const isNew = !job;
     jobModalTitle.textContent = isNew ? "Add job" : "Edit job";
@@ -894,6 +926,14 @@
     const hasPrep = data.hasInterviewPrepContent && data.hasInterviewPrepContent(prep);
     if (prepBody) prepBody.hidden = !hasPrep;
     if (prepToggle) prepToggle.textContent = hasPrep ? "Hide" : "Add prep";
+
+    // Interview rounds — auto-expand when there are any logged.
+    const interviews = (base && Array.isArray(base.interviews)) ? base.interviews : [];
+    renderInterviews(interviews);
+    const ivBody = $("field-interviews-body");
+    const ivToggle = $("field-interviews-toggle");
+    if (ivBody) ivBody.hidden = interviews.length === 0;
+    if (ivToggle) ivToggle.textContent = interviews.length ? "Hide" : "Add interview";
 
     // AI cover letter block: preload cached letter if present; auto-expand so
     // users can see it without hunting for a toggle when one already exists.
@@ -1037,6 +1077,38 @@
     });
   }
 
+  // Interview rounds: toggle, add a round, remove a round.
+  const ivToggleBtn = $("field-interviews-toggle");
+  if (ivToggleBtn) {
+    ivToggleBtn.addEventListener("click", () => {
+      const body = $("field-interviews-body");
+      if (!body) return;
+      const willShow = body.hidden;
+      body.hidden = !willShow;
+      const list = $("interviews-list");
+      if (willShow && list && !list.children.length) list.insertAdjacentHTML("beforeend", interviewRowHtml({}));
+      ivToggleBtn.textContent = willShow ? "Hide" : (list && list.children.length ? "Hide" : "Add interview");
+      if (willShow && list) { const f = list.querySelector(".iv-label"); if (f) f.focus(); }
+    });
+  }
+  const addInterviewBtn = $("add-interview-btn");
+  if (addInterviewBtn) {
+    addInterviewBtn.addEventListener("click", () => {
+      const list = $("interviews-list");
+      if (!list) return;
+      list.insertAdjacentHTML("beforeend", interviewRowHtml({}));
+      const f = list.lastElementChild && list.lastElementChild.querySelector(".iv-label");
+      if (f) f.focus();
+    });
+  }
+  const interviewsList = $("interviews-list");
+  if (interviewsList) {
+    interviewsList.addEventListener("click", (e) => {
+      const rm = e.target.closest(".iv-remove");
+      if (rm) { const row = rm.closest(".interview-round"); if (row) row.remove(); }
+    });
+  }
+
   jobForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const payload = {
@@ -1059,7 +1131,8 @@
         questionsToAsk: $("field-prep-questionsToAsk").value,
         starStories: $("field-prep-starStories").value,
         notes: $("field-prep-notes").value
-      }
+      },
+      interviews: readInterviews()
     };
 
     const existing = payload.id && state.jobs.find((j) => j.id === payload.id);

@@ -1102,6 +1102,58 @@ button, input, select, textarea {
 }
 .prep-grid textarea { resize: vertical; }
 
+/* Interview rounds */
+.interviews-list { display: grid; gap: 12px; margin-bottom: 12px; }
+.interview-round {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--bg);
+  display: grid;
+  gap: 8px;
+}
+.interview-round-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.interview-round-head .iv-label { flex: 1 1 auto; min-width: 0; }
+.interview-round-head .iv-date { flex: 0 0 auto; width: 200px; max-width: 48%; }
+.interview-round input,
+.interview-round textarea {
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+.interview-round input:focus,
+.interview-round textarea:focus {
+  border-color: var(--teal-500);
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.15);
+  outline: none;
+}
+.interview-round textarea { resize: vertical; width: 100%; }
+.iv-remove {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.iv-remove:hover { background: rgba(158, 92, 99, 0.12); color: #9e5c63; border-color: rgba(158, 92, 99, 0.3); }
+#add-interview-btn { font-size: 13px; }
+@media (max-width: 620px) {
+  .interview-round-head { flex-wrap: wrap; }
+  .interview-round-head .iv-date { width: 100%; max-width: none; }
+}
+
 @media (max-width: 620px) {
   .prep-grid { grid-template-columns: 1fr; }
   .prep-grid .span-2 { grid-column: span 1; }

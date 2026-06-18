@@ -375,6 +375,29 @@
     };
   }
 
+  // Per-job list of interview rounds, each with its own notes. Empty rounds are
+  // dropped so blank rows don't persist. Capped to keep storage bounded.
+  const INTERVIEWS_MAX = 12;
+  function sanitizeInterviews(input) {
+    if (!Array.isArray(input)) return [];
+    return input
+      .map((it) => {
+        if (!it || typeof it !== "object") return null;
+        const label = String(it.label || "").slice(0, 120).trim();
+        const date = String(it.date || "").slice(0, 30).trim();
+        const notes = String(it.notes || "").slice(0, 4000);
+        if (!label && !date && !notes.trim()) return null;
+        return {
+          id: String(it.id || ("iv_" + Math.random().toString(36).slice(2, 10))),
+          label,
+          date,
+          notes
+        };
+      })
+      .filter(Boolean)
+      .slice(0, INTERVIEWS_MAX);
+  }
+
   // Status timeline: every transition is recorded as `{ status, at }` so the
   // UI can render a stage history per job. Capped at 24 entries to bound
   // storage on jobs that get bumped many times. Order is chronological
@@ -451,6 +474,7 @@
     // Cached description — truncated so a huge listing can't blow storage quotas.
     const description = String(input.description || "").slice(0, 8000);
     const interviewPrep = sanitizeInterviewPrep(input.interviewPrep);
+    const interviews = sanitizeInterviews(input.interviews);
     const aiCoverLetter = sanitizeAiCoverLetter(input.aiCoverLetter);
     const aiFitAnalysis = sanitizeAiFitAnalysis(input.aiFitAnalysis);
     let stageHistory = sanitizeStageHistory(input.stageHistory);
@@ -493,6 +517,7 @@
       url,
       normalizedUrl,
       interviewPrep,
+      interviews,
       aiCoverLetter,
       aiFitAnalysis,
       stageHistory,
