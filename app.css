@@ -1881,3 +1881,17 @@ button, input, select, textarea {
   height: 1px;
   background: var(--line);
 }
+
+/* Discover card source tag + salary emphasis */
+.disc-source {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--teal-700);
+  background: var(--teal-50);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.disc-salary { color: var(--text-soft); font-weight: 600; }

@@ -475,7 +475,9 @@
     // fall back to the explicit arg for callers that pass it directly.
     const candidateLoc = candidateLocation || job.candidate_required_location || "";
     const reqLoc = String(candidateLoc).toLowerCase().trim();
-    const hay = [job.workMode, job.location, candidateLoc, job.description]
+    // Include the title — boards often encode the region lock there
+    // ("… (US only)", "[Remote: LATAM Time Zones Only]") and nowhere else.
+    const hay = [job.title, job.jobTitle, job.workMode, job.location, candidateLoc, job.description]
       .map((x) => String(x || "")).join("  ").toLowerCase();
 
     const remote = /\bremote\b|work from home|\bwfh\b|distributed team|remote-first/.test(hay);

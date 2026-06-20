@@ -960,9 +960,10 @@
         </div>
         <div class="disc-meta">
           <span title="Accepted location">📍 ${escapeHtml(loc)}</span>
-          ${rj.jobType ? `<span>• ${escapeHtml(rj.jobType.replace(/_/g, " "))}</span>` : ""}
-          ${rj.salary ? `<span>• ${escapeHtml(rj.salary)}</span>` : ""}
+          ${rj.jobType ? `<span>• ${escapeHtml(String(rj.jobType).replace(/_/g, " "))}</span>` : ""}
+          ${rj.salary ? `<span class="disc-salary">• 💷 ${escapeHtml(rj.salary)}</span>` : ""}
           ${published ? `<span>• ${escapeHtml(published)}</span>` : ""}
+          ${rj.source ? `<span class="disc-source" title="Source board">${escapeHtml(rj.source)}</span>` : ""}
         </div>
         <div class="disc-actions">
           <a class="ghost-button" href="${escapeHtml(rj.url)}" target="_blank" rel="noopener noreferrer">View posting ↗</a>
@@ -1189,7 +1190,7 @@
   // is identical from your side: the first time you open the app on a new
   // calendar day, we fetch a fresh batch, filter it, and cache it for the day.
   const DAILY_PICKS_KEY = "jobtrail_daily_picks";
-  const DAILY_TARGET = 15;
+  const DAILY_TARGET = 35;
   const SALARY_FLOOR_GBP = 25000;
   let dailyPicks = [];
 
@@ -1221,14 +1222,29 @@
     return val * fx;
   }
 
-  // Your chosen daily rules: drop region-locked (US-only etc.) roles, and drop
-  // roles whose listed pay is below the floor. Unlisted salary is kept.
+  // Your chosen daily rules: drop region-locked (US-only etc.) roles, drop
+  // roles whose listed pay is below the floor (unlisted salary is kept), and
+  // drop anything already in your pipeline — tracked or rejected.
   function passesDailyFilter(rj) {
+    if (alreadyTracked(rj)) return false;
     const elig = data.assessRemoteEligibility(rj, homeCountry());
     if (elig.eligibility === "restricted") return false;
     const gbp = parseAnnualGbp(rj.salary);
     if (gbp != null && gbp < SALARY_FLOOR_GBP) return false;
     return true;
+  }
+
+  // Rank the daily picks so the strongest surface first: eligible > unknown,
+  // a stated salary is a plus, and fresher postings score higher.
+  function pickScore(rj) {
+    let s = 0;
+    const elig = data.assessRemoteEligibility(rj, homeCountry());
+    if (elig.eligibility === "eligible") s += 30;
+    else if (elig.eligibility === "unknown") s += 10;
+    if (parseAnnualGbp(rj.salary) != null) s += 15;
+    const ts = new Date(rj.publishedAt).getTime();
+    if (!isNaN(ts)) s += Math.max(0, 20 - ((Date.now() - ts) / 86400000) * 3);
+    return s;
   }
 
   function renderDailyPicks() {
@@ -1259,9 +1275,11 @@
     }
     if (status) status.textContent = "Fetching today's remote picks…";
     try {
-      // Pull the latest broad batch, then filter down to the target count.
-      const jobs = await fetchDiscover({ limit: 50 });
-      dailyPicks = jobs.filter(passesDailyFilter).slice(0, DAILY_TARGET);
+      // Pull the latest broad batch, then filter + rank down to the target.
+      const jobs = await fetchDiscover({ limit: 100 });
+      dailyPicks = jobs.filter(passesDailyFilter)
+        .sort((a, b) => pickScore(b) - pickScore(a))
+        .slice(0, DAILY_TARGET);
       try { localStorage.setItem(DAILY_PICKS_KEY, JSON.stringify({ date: todayStr(), jobs: dailyPicks })); } catch (_) { /* ignore quota */ }
       renderDailyPicks();
     } catch (err) {
