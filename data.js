@@ -159,12 +159,60 @@
       .replace(/(^|[\s'’\-])([a-zà-öø-ÿ])/g, (m, sep, ch) => sep + ch.toUpperCase());
   }
 
+  // Job-board / ATS platforms that put the EMPLOYER in the URL path
+  // (job-boards.greenhouse.io/gitlab/jobs/123 -> "gitlab") or in a company
+  // subdomain (acme.workable.com). The bare-subdomain heuristic used to read
+  // these as "Job Boards" / "Jobs", so handle the known platforms explicitly.
+  const ATS_PATH_ROOTS = [
+    "greenhouse.io", "lever.co", "ashbyhq.com", "smartrecruiters.com",
+    "workable.com", "breezy.hr", "jobvite.com", "teamtailor.com",
+    "applytojob.com", "recruitee.com", "bamboohr.com", "pinpointhq.com"
+  ];
+  // Subdomain/path labels that are never the employer's name.
+  const NON_COMPANY_LABELS = new Set([
+    "www", "jobs", "job", "jobboards", "boards", "board", "apply", "applications",
+    "careers", "career", "remote", "work", "hire", "hiring", "recruiting",
+    "recruit", "talent", "app", "secure", "my", "go", "grnh", "embed", "portal"
+  ]);
+  const PATH_SKIP_RE = /^(jobs?|careers?|embed|apply|o|p|positions?|openings?|opportunities|company|en|us|uk|gb)$/i;
+  const TLD_SECOND_LEVEL = new Set(["co", "com", "org", "gov", "ac", "net", "edu"]);
+
   function inferCompanyFromUrl(rawUrl) {
     try {
       const url = new URL(rawUrl);
-      const host = url.hostname.replace(/^www\./, "");
-      const first = host.split(".")[0] || "";
-      return toTitleCase(first.replace(/[-_]+/g, " "));
+      const host = url.hostname.replace(/^www\./, "").toLowerCase();
+      const labels = host.split(".");
+      const segs = url.pathname.split("/").filter(Boolean);
+      const clean = (s) => toTitleCase(decodeURIComponent(String(s || "")).replace(/[-_+]+/g, " ").trim());
+
+      // 1) Known ATS host → employer is a company subdomain or the first
+      //    meaningful path segment.
+      const atsRoot = ATS_PATH_ROOTS.find((r) => host === r || host.endsWith("." + r));
+      if (atsRoot) {
+        // Old Greenhouse embed style: ?for=company
+        if (host.endsWith("greenhouse.io")) {
+          const forCo = url.searchParams.get("for");
+          if (forCo) return clean(forCo);
+        }
+        const sub = labels[0] || "";
+        const subIsPlatform = NON_COMPANY_LABELS.has(sub.replace(/[-_]/g, "")) || labels.length <= 2;
+        if (!subIsPlatform) return clean(sub);            // acme.workable.com
+        const seg = segs.find((s) => !PATH_SKIP_RE.test(s));
+        if (seg) return clean(seg);                       // …/gitlab/jobs/123
+      }
+
+      // 2) Workday: {company}.wdN.myworkdayjobs.com
+      if (host.endsWith("myworkdayjobs.com")) return clean(labels[0]);
+
+      // 3) Generic host: use the subdomain, unless it's a non-company label
+      //    (jobs., careers., job-boards.) — then use the registrable domain.
+      const first = labels[0] || "";
+      if (NON_COMPANY_LABELS.has(first.replace(/[-_]/g, ""))) {
+        let idx = labels.length - 2;
+        if (idx > 0 && TLD_SECOND_LEVEL.has(labels[idx])) idx -= 1; // skip .co.uk etc.
+        return clean(labels[Math.max(0, idx)] || first);
+      }
+      return clean(first);
     } catch (error) {
       return "";
     }
