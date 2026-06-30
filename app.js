@@ -1177,6 +1177,7 @@
     state.jobs.unshift(sanitized);
     renderDiscoverResults();
     renderDailyPicks();
+    syncAtsCompanies();
     if (currentView === "pipeline") renderJobs();
     saveToDrive().then((r) => {
       if (!r.ok) return;
@@ -1289,9 +1290,42 @@
     }
   }
 
+  // Auto-grow the Discover company list: when the user tracks a Greenhouse/
+  // Lever/Ashby role, tell the backend so future crawls pull that whole board.
+  const ATS_SENT_KEY = "jobtrail_ats_sent";
+  function loadAtsSent() {
+    try { return new Set(JSON.parse(localStorage.getItem(ATS_SENT_KEY) || "[]")); } catch (_) { return new Set(); }
+  }
+  function syncAtsCompanies() {
+    const sent = loadAtsSent();
+    const fresh = [];
+    (state.jobs || []).forEach((j) => {
+      if (j.deletedAt || !j.url) return;
+      const ats = data.extractAtsCompany(j.url);
+      if (!ats) return;
+      const key = ats.platform + ":" + ats.token;
+      if (!sent.has(key)) { sent.add(key); fresh.push(ats); }
+    });
+    if (!fresh.length) return;
+    fetch("/api/ats-company", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ companies: fresh })
+    })
+      .then(() => { try { localStorage.setItem(ATS_SENT_KEY, JSON.stringify([...sent])); } catch (_) { /* ignore */ } })
+      .catch(() => { /* best-effort */ });
+  }
+  // Kick the background crawler (Netlify background function → returns 202
+  // immediately, runs up to 15 min). It's TTL-gated server-side, so it's safe
+  // to call on every Discover open; it only re-crawls when the cache is stale.
+  function pingAtsRefresh() {
+    try { fetch("/.netlify/functions/ats-refresh-background").catch(() => {}); } catch (_) { /* ignore */ }
+  }
+
   function onEnterDiscover() {
     renderSavedSearches();
     updateDiscoverDot();
+    pingAtsRefresh();
     loadDailyPicks(false);
   }
 
@@ -2080,6 +2114,7 @@
     maybeRevealAnalyticsTab();
     setView(currentView);
     refreshSavedSearchCounts();
+    syncAtsCompanies();
   }
 
   function showExtensionLocalMode() {
@@ -2094,6 +2129,7 @@
     importBtn.disabled = false;
     setView(currentView);
     refreshSavedSearchCounts();
+    syncAtsCompanies();
   }
 
   function showSignedOut() {

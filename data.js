@@ -218,6 +218,35 @@
     }
   }
 
+  // Detect a Greenhouse/Lever/Ashby posting and pull out the employer's board
+  // token, so we can auto-grow the Discover company list from roles the user
+  // actually tracks. Returns { platform, token } or null.
+  function extractAtsCompany(rawUrl) {
+    try {
+      const url = new URL(rawUrl);
+      const host = url.hostname.replace(/^www\./, "").toLowerCase();
+      const segs = url.pathname.split("/").filter(Boolean);
+      const valid = (t) => /^[a-z0-9][a-z0-9-]{0,60}$/.test(t || "");
+      if (host.endsWith("greenhouse.io")) {
+        const forCo = url.searchParams.get("for");
+        const seg = segs.find((s) => !/^(embed|jobs?)$/i.test(s));
+        const token = (seg || forCo || "").toLowerCase();
+        return valid(token) ? { platform: "greenhouse", token } : null;
+      }
+      if (host.endsWith("lever.co")) {
+        const token = (segs[0] || "").toLowerCase();
+        return valid(token) ? { platform: "lever", token } : null;
+      }
+      if (host.endsWith("ashbyhq.com")) {
+        const token = (segs[0] || "").toLowerCase();
+        return valid(token) ? { platform: "ashby", token } : null;
+      }
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }
+
   function extractDomain(rawUrl) {
     try {
       const url = new URL(rawUrl);
@@ -1509,6 +1538,7 @@
     getHostAutofillMappings,
     getProfile,
     inferCompanyFromUrl,
+    extractAtsCompany,
     listSnapshots,
     mergeJobsByUpdatedAt,
     normalizeText,

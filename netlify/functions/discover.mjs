@@ -230,8 +230,16 @@ export default async (req) => {
   const sources = {};
   settled.forEach((list, i) => { sources[sourceNames[i]] = list.length; });
 
+  // Roles crawled from Greenhouse/Lever/Ashby company boards, refreshed
+  // separately by /api/ats-refresh and cached in the same store.
+  let atsJobs = [];
+  if (store) {
+    try { const a = await store.get("ats-latest", { type: "json" }); if (a && Array.isArray(a.jobs)) atsJobs = a.jobs; } catch (_) { atsJobs = []; }
+  }
+  sources["ATS boards"] = atsJobs.length;
+
   const terms = search ? search.toLowerCase().split(/\s+/).filter(Boolean) : [];
-  let merged = dedupe([].concat(...settled).map(normalize))
+  let merged = dedupe([].concat(...settled, atsJobs).map(normalize))
     .filter((j) => matchesSearch(j, terms))
     .sort((a, b) => tsOf(b) - tsOf(a))
     .slice(0, limit);
