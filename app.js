@@ -518,8 +518,11 @@
     if (!job || !job.postedAt || !job.dateApplied) return null;
     const p = new Date(job.postedAt), a = new Date(job.dateApplied);
     if (isNaN(p.getTime()) || isNaN(a.getTime())) return null;
-    const d = Math.round((a.getTime() - p.getTime()) / 86400000);
-    return d >= 0 ? d : null;
+    // Compare at date granularity: dateApplied is date-only (midnight), so a
+    // same-day apply must come out as 0, not a negative fraction of a day.
+    const day = (d) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    const diff = Math.round((day(a) - day(p)) / 86400000);
+    return diff >= 0 ? diff : null;
   }
 
   // Fit tiers for classifying the pipeline by AI fit-analysis score.
@@ -535,7 +538,7 @@
   // Employer ATS boards (apply directly on the company's careers page) tend to
   // be higher-signal than aggregator job boards — flag + rank them accordingly.
   function isDirectSource(rj) {
-    return /^(Greenhouse|Lever|Ashby)$/i.test(String(rj && rj.source || ""));
+    return /^(Greenhouse|Lever|Ashby|Workable|SmartRecruiters|Recruitee)$/i.test(String(rj && rj.source || ""));
   }
 
   // ---- Language requirements ---------------------------------------------
@@ -987,6 +990,76 @@
         </li>
       `).join("");
     }
+
+    renderResponseInsights(live);
+  }
+
+  // ---- Response insights: where do applications actually get replies? ------
+  // Groups applied jobs by source / fit band / how fast you applied after
+  // posting, and shows reply + interview rates so effort goes where it works.
+  function jobReachedStage(job, stage) {
+    if (Array.isArray(job.stageHistory) && job.stageHistory.some((h) => h && h.status === stage)) return true;
+    return job.status === stage;
+  }
+  function isAppliedJob(job) {
+    return Boolean(job.dateApplied)
+      || jobReachedStage(job, "applied")
+      || jobReachedStage(job, "interviewing")
+      || jobReachedStage(job, "offer");
+  }
+  function gotInterview(job) {
+    return jobReachedStage(job, "interviewing") || jobReachedStage(job, "offer");
+  }
+  function gotReply(job) {
+    // A rejection is still a reply — silence is the real negative signal.
+    return gotInterview(job) || job.status === "rejected";
+  }
+
+  function responseInsightRows(jobs, keyFn) {
+    const groups = {};
+    jobs.forEach((j) => {
+      const key = keyFn(j);
+      if (!key) return;
+      const g = groups[key] || (groups[key] = { label: key, applied: 0, replies: 0, interviews: 0 });
+      g.applied += 1;
+      if (gotReply(j)) g.replies += 1;
+      if (gotInterview(j)) g.interviews += 1;
+    });
+    return Object.values(groups).sort((a, b) => b.applied - a.applied);
+  }
+
+  function renderResponseInsights(live) {
+    const wrap = $("response-insights");
+    if (!wrap) return;
+    const appliedJobs = live.filter(isAppliedJob);
+    if (!appliedJobs.length) { wrap.hidden = true; return; }
+    wrap.hidden = false;
+
+    const bySource = responseInsightRows(appliedJobs, (j) => j.sourceHost || "manual / unknown").slice(0, 8);
+    const FIT_LABELS = { strong: "Strong fit (80+)", good: "Good (65–79)", fair: "Fair (50–64)", weak: "Weak (<50)", unscored: "Unscored" };
+    const byFit = responseInsightRows(appliedJobs, (j) => FIT_LABELS[fitTier(j)]);
+    const byDelay = responseInsightRows(appliedJobs, (j) => {
+      const d = appliedAfterPostingDays(j);
+      if (d == null) return "Unknown";
+      if (d <= 1) return "0–1 days after posting";
+      if (d <= 7) return "2–7 days";
+      return "8+ days";
+    });
+
+    const rowsHtml = (rows) => rows.map((r) => `
+      <tr>
+        <td class="ri-label">${escapeHtml(r.label)}</td>
+        <td class="ri-num">${r.applied}</td>
+        <td class="ri-num">${r.replies}</td>
+        <td class="ri-num">${r.interviews}</td>
+        <td class="ri-num ri-rate" style="--fit-color:${fitScoreColor(pct(r.interviews, r.applied))}">${pct(r.interviews, r.applied)}%</td>
+      </tr>`).join("");
+
+    const srcRows = $("ri-source-rows"); if (srcRows) srcRows.innerHTML = rowsHtml(bySource);
+    const fitRows = $("ri-fit-rows"); if (fitRows) fitRows.innerHTML = rowsHtml(byFit);
+    const delayRows = $("ri-delay-rows"); if (delayRows) delayRows.innerHTML = rowsHtml(byDelay);
+    const note = $("ri-note");
+    if (note) note.textContent = `${appliedJobs.length} application${appliedJobs.length === 1 ? "" : "s"} analysed · replies include rejections (silence is the real negative) · rate = interview rate.`;
   }
 
   // ---------- View switching ----------
@@ -1121,7 +1194,8 @@
     const tracked = alreadyTracked(rj);
     const trackBtn = tracked
       ? `<button class="ghost-button" disabled>✓ Tracked</button>`
-      : `<button class="primary-button" data-action="track-discover" data-id="${escapeHtml(rj.id)}">+ Track</button>`;
+      : `<button class="ghost-button disc-track" data-action="track-discover" data-id="${escapeHtml(rj.id)}">+ Track</button>
+         <button class="ghost-button" data-action="applied-discover" data-id="${escapeHtml(rj.id)}" title="You applied to this role — add it to the pipeline as applied today">✓ Applied</button>`;
     const published = rj.publishedAt ? formatRelative(rj.publishedAt) : "";
     const postedAbs = rj.publishedAt ? absoluteDate(rj.publishedAt) : "";
     const direct = isDirectSource(rj);
@@ -1139,12 +1213,12 @@
         <div class="disc-meta">
           ${rj._aiFit && typeof rj._aiFit.score === "number"
             ? `<span class="disc-fit disc-fit-ai" style="--fit-color:${fitScoreColor(rj._aiFit.score)}" title="${escapeHtml(rj._aiFit.summary || "AI CV ↔ JD analysis")}">✦ AI ${rj._aiFit.score}</span>`
-            : (typeof rj._fit === "number" ? `<span class="disc-fit" style="--fit-color:${fitScoreColor(rj._fit)}" title="Keyword match to your CV — a quick estimate, not a full AI analysis">${rj._fit}% fit</span>` : "")}
-          <span title="Accepted location">📍 ${escapeHtml(loc)}</span>
+            : (typeof rj._fit === "number" ? `<span class="disc-fit"${rj._fit >= 70 ? ` style="--fit-color:${fitScoreColor(rj._fit)}"` : ""} title="Keyword match to your CV — a quick estimate, not a full AI analysis">${rj._fit}% fit</span>` : "")}
+          <span title="Accepted location">${escapeHtml(loc)}</span>
           ${rj.jobType ? `<span>• ${escapeHtml(String(rj.jobType).replace(/_/g, " "))}</span>` : ""}
-          ${rj.salary ? `<span class="disc-salary">• 💷 ${escapeHtml(rj.salary)}</span>` : ""}
+          ${rj.salary ? `<span class="disc-salary">• ${escapeHtml(rj.salary)}</span>` : ""}
           ${published ? `<span title="Posted ${escapeHtml(postedAbs)}">• Posted ${escapeHtml(published)}</span>` : ""}
-          ${rj.source ? `<span class="disc-source${direct ? " disc-source-direct" : ""}" title="${direct ? "Direct from the employer's careers page" : "Via a job-board aggregator"}">${direct ? "◆ " : ""}${escapeHtml(rj.source)}</span>` : ""}
+          ${rj.source ? `<span class="disc-source" title="${direct ? "Direct from the employer's careers page" : "Via a job-board aggregator"}">${direct ? `<span class="disc-diamond">◆</span> ` : ""}${escapeHtml(rj.source)}</span>` : ""}
         </div>
         <div class="disc-actions">
           <a class="ghost-button" href="${escapeHtml(rj.url)}" target="_blank" rel="noopener noreferrer">View posting ↗</a>
@@ -1367,10 +1441,11 @@
     return discoverResults.find((r) => r.id === id) || dailyPicks.find((r) => r.id === id);
   }
 
-  function trackDiscoverJob(id) {
+  function trackDiscoverJob(id, status) {
     const rj = findDiscoverJob(id);
     if (!rj) return;
     if (alreadyTracked(rj)) { toast("Already in your pipeline."); return; }
+    const applied = status === "applied";
     const elig = data.assessRemoteEligibility(rj, homeCountry());
     const sanitized = data.sanitizeJob({
       jobTitle: decodeEntities(rj.title),
@@ -1382,7 +1457,8 @@
       salary: rj.salary || "",
       postedAt: rj.publishedAt || "",
       description: decodeEntities(rj.description || ""),
-      status: "bookmarked",
+      status: applied ? "applied" : "bookmarked",
+      dateApplied: applied ? data.todayString() : "",
       // A card-level AI fit run carries straight into the pipeline's Fit column.
       aiFitAnalysis: rj._aiFit || undefined,
       notes: elig.eligibility === "restricted" ? `⚠ Region note: ${elig.reason}` : ""
@@ -1395,7 +1471,9 @@
     saveToDrive().then((r) => {
       if (!r.ok) return;
       window.postMessage({ type: "JOBTRAIL_SYNC_REQUEST" }, "*");
-      toast(r.localOnly ? "Tracked locally" : "Tracked to pipeline");
+      toast(applied
+        ? (r.localOnly ? "Marked applied (saved locally)" : "Marked applied — in your pipeline")
+        : (r.localOnly ? "Tracked locally" : "Tracked to pipeline"));
     });
   }
 
@@ -1669,7 +1747,8 @@
     const wrap = $("followed-list");
     if (!wrap) return;
     const all = [];
-    ["greenhouse", "lever", "ashby"].forEach((p) => ((companies && companies[p]) || []).forEach((t) => all.push({ p, t })));
+    ["greenhouse", "lever", "ashby", "workable", "smartrecruiters", "recruitee"]
+      .forEach((p) => ((companies && companies[p]) || []).forEach((t) => all.push({ p, t })));
     if (!all.length) { wrap.innerHTML = `<span class="followed-empty">No followed companies yet — Track a role or add one above.</span>`; return; }
     wrap.innerHTML = all.map(({ p, t }) =>
       `<span class="followed-chip"><span class="followed-name">${escapeHtml(titleizeToken(t))}</span><span class="followed-src">${escapeHtml(p)}</span><button type="button" class="followed-del" data-action="unfollow" data-p="${escapeHtml(p)}" data-t="${escapeHtml(t)}" title="Unfollow">×</button></span>`
@@ -1741,6 +1820,7 @@
     const btn = e.target.closest("[data-action]");
     if (!btn) return;
     if (btn.dataset.action === "track-discover") trackDiscoverJob(btn.dataset.id);
+    else if (btn.dataset.action === "applied-discover") trackDiscoverJob(btn.dataset.id, "applied");
     else if (btn.dataset.action === "ai-fit") runDiscoverAiFit(btn.dataset.id, btn);
     else if (btn.dataset.action === "dismiss-discover") dismissRole(btn.dataset.id);
   }

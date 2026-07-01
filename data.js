@@ -244,6 +244,21 @@
         const token = (segs[0] || "").toLowerCase();
         return valid(token) ? { platform: "ashby", token } : null;
       }
+      if (host.endsWith("workable.com")) {
+        // apply.workable.com/{token}/... or {token}.workable.com
+        const sub = host.split(".")[0];
+        const token = (sub !== "apply" && sub !== "www" ? sub : (segs[0] || "")).toLowerCase();
+        return valid(token) ? { platform: "workable", token } : null;
+      }
+      if (host.endsWith("smartrecruiters.com")) {
+        // jobs.smartrecruiters.com/{Company}/{postingId}... (identifier is case-insensitive)
+        const token = (segs[0] || "").toLowerCase();
+        return valid(token) ? { platform: "smartrecruiters", token } : null;
+      }
+      if (host.endsWith("recruitee.com")) {
+        const token = (host.split(".")[0] || "").toLowerCase();
+        return valid(token) && token !== "www" ? { platform: "recruitee", token } : null;
+      }
       return null;
     } catch (error) {
       return null;

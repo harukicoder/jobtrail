@@ -3,7 +3,8 @@ import { getStore } from "@netlify/blobs";
 // Auto-grow: the webapp POSTs the Greenhouse/Lever/Ashby board tokens of roles
 // the user has tracked, so the next crawl pulls those employers' full boards.
 // Body: { companies: [{ platform, token }, ...] } or a single { platform, token }.
-const PLATFORMS = new Set(["greenhouse", "lever", "ashby"]);
+import { PLATFORMS as PLATFORM_LIST } from "./_ats.mjs";
+const PLATFORMS = new Set(PLATFORM_LIST);
 const VALID_TOKEN = /^[a-z0-9][a-z0-9-]{0,60}$/;
 const MAX_PER_PLATFORM = 2000; // guard against unbounded growth
 
@@ -19,9 +20,7 @@ export default async (req) => {
   const load = async () => {
     let cur = {};
     try { cur = (await store.get("ats-companies", { type: "json" })) || {}; } catch (_) { cur = {}; }
-    cur.greenhouse = cur.greenhouse || [];
-    cur.lever = cur.lever || [];
-    cur.ashby = cur.ashby || [];
+    PLATFORM_LIST.forEach((p) => { cur[p] = cur[p] || []; });
     return cur;
   };
 

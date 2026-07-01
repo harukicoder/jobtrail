@@ -232,6 +232,37 @@
             <ul id="funnel-upcoming"><li class="muted">None scheduled.</li></ul>
           </div>
         </div>
+
+        <div class="response-insights" id="response-insights" hidden>
+          <div class="ri-head">
+            <h3>Response insights</h3>
+            <p class="funnel-sub">Where your applications actually get replies — so you can double down on what works.</p>
+          </div>
+          <div class="ri-grid">
+            <div class="ri-card">
+              <h4>By source</h4>
+              <table class="ri-table">
+                <thead><tr><th></th><th class="ri-num">Applied</th><th class="ri-num">Replies</th><th class="ri-num">Interviews</th><th class="ri-num">Rate</th></tr></thead>
+                <tbody id="ri-source-rows"></tbody>
+              </table>
+            </div>
+            <div class="ri-card">
+              <h4>By fit score</h4>
+              <table class="ri-table">
+                <thead><tr><th></th><th class="ri-num">Applied</th><th class="ri-num">Replies</th><th class="ri-num">Interviews</th><th class="ri-num">Rate</th></tr></thead>
+                <tbody id="ri-fit-rows"></tbody>
+              </table>
+            </div>
+            <div class="ri-card">
+              <h4>By speed of applying</h4>
+              <table class="ri-table">
+                <thead><tr><th></th><th class="ri-num">Applied</th><th class="ri-num">Replies</th><th class="ri-num">Interviews</th><th class="ri-num">Rate</th></tr></thead>
+                <tbody id="ri-delay-rows"></tbody>
+              </table>
+            </div>
+          </div>
+          <p class="ri-note" id="ri-note"></p>
+        </div>
       </section>
 
       <section class="jobs-section" id="jobs-section" hidden>

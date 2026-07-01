@@ -258,6 +258,23 @@ export default async (req) => {
 
   if (store) {
     try { await store.setJSON(cacheKey, { ts: Date.now(), jobs: merged, sources }); } catch (_) { /* non-fatal */ }
+    // Auto-grow feedstock: companies seen on the job boards become candidate
+    // ATS tokens; the weekly ats-autogrow function probes them and follows any
+    // that turn out to have a live Greenhouse/Lever/Ashby/etc. board.
+    try {
+      const DIRECT = new Set(["Greenhouse", "Lever", "Ashby", "Workable", "SmartRecruiters", "Recruitee"]);
+      const tokens = [...new Set(
+        merged.filter((j) => !DIRECT.has(j.source))
+          .map((j) => String(j.company || "").toLowerCase().replace(/[^a-z0-9]+/g, ""))
+          .filter((t) => t.length >= 3 && t.length <= 30)
+      )];
+      if (tokens.length) {
+        const existing = (await store.get("ats-candidates", { type: "json" })) || [];
+        const probed = new Set((await store.get("ats-probed", { type: "json" })) || []);
+        const queue = [...new Set([...existing, ...tokens])].filter((t) => !probed.has(t)).slice(-400);
+        await store.setJSON("ats-candidates", queue);
+      }
+    } catch (_) { /* non-fatal */ }
   }
 
   return json({ jobs: merged, sources, cached: false });
