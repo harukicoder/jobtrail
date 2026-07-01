@@ -1831,8 +1831,9 @@ button, input, select, textarea {
   flex-direction: column;
   gap: 10px;
 }
-.disc-card[data-elig="restricted"] { border-left: 3px solid #c0626b; }
-.disc-card[data-elig="eligible"] { border-left: 3px solid #3f9d6b; }
+/* Only flag the exceptions with an edge accent — "eligible" is the common case
+   and gets no border, so the grid stays calm. Restricted = warm, direct = teal. */
+.disc-card[data-elig="restricted"] { border-left: 3px solid rgba(192, 98, 107, 0.55); }
 .disc-card-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
 .disc-card-title { display: flex; flex-direction: column; gap: 2px; }
 .disc-card-title strong { font-size: 14.5px; color: var(--text); }
@@ -1845,8 +1846,10 @@ button, input, select, textarea {
   padding: 2px 8px;
   white-space: nowrap;
 }
+/* Keep the warning states loud (they're the exceptions worth noticing) and the
+   ubiquitous "you can apply" quiet — plain muted-green text, no filled pill. */
 .disc-badge.disc-warn { color: #c0626b; background: rgba(192, 98, 107, 0.14); }
-.disc-badge.disc-ok { color: #3f9d6b; background: rgba(63, 157, 107, 0.14); }
+.disc-badge.disc-ok { color: #4a8f6a; background: transparent; padding: 2px 2px; font-weight: 600; }
 .disc-badge.disc-unknown { color: var(--muted); background: rgba(107, 127, 130, 0.12); }
 .disc-meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12.5px; color: var(--muted); }
 .disc-actions { display: flex; gap: 8px; margin-top: auto; }
@@ -1900,7 +1903,7 @@ button, input, select, textarea {
   font-weight: 800;
   font-size: 11px;
   color: var(--fit-color, var(--teal-700));
-  background: color-mix(in srgb, var(--fit-color, var(--teal-500)) 14%, transparent);
+  background: rgba(17, 52, 56, 0.05); /* neutral chip; only the number carries colour */
   border-radius: 999px;
   padding: 1px 8px;
 }
@@ -1946,3 +1949,66 @@ button, input, select, textarea {
 .lang-badge.lang-blocker { color: #c0626b; background: rgba(192, 98, 107, 0.14); }
 .lang-badge.lang-good { color: #3f9d6b; background: rgba(63, 157, 107, 0.14); }
 .lang-badge.lang-rec { color: var(--muted); background: rgba(107, 127, 130, 0.12); }
+
+/* Today's picks: sort + filter controls */
+.daily-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 12px;
+}
+.daily-ctl { font-size: 12.5px; color: var(--muted); font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.daily-controls select,
+.daily-controls .daily-loc {
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+.daily-controls .daily-loc { flex: 0 1 220px; }
+
+/* Follow companies */
+.follow-form { display: flex; gap: 8px; margin: 10px 0 6px; flex-wrap: wrap; }
+.follow-form #follow-input {
+  flex: 1 1 260px;
+  padding: 8px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13.5px;
+}
+.follow-status { font-size: 12.5px; color: var(--muted); margin: 4px 0 10px; min-height: 1em; }
+.followed-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.followed-empty { font-size: 12.5px; color: var(--muted); }
+.followed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--teal-50);
+  border: 1px solid rgba(20, 184, 166, 0.25);
+  border-radius: 999px;
+  padding: 3px 6px 3px 11px;
+}
+.followed-name { font-size: 13px; font-weight: 600; color: var(--teal-800); }
+.followed-src {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.followed-del {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  border-radius: 50%;
+}
+.followed-del:hover { color: #c0626b; }

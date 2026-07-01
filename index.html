@@ -140,6 +140,17 @@
             <button class="ghost-button" id="daily-refresh" type="button" title="Fetch a fresh set of remote roles">↻ Refresh</button>
           </div>
           <p class="discover-status" id="daily-status">Loading today's remote picks…</p>
+          <div class="daily-controls" id="daily-controls" hidden>
+            <label class="daily-ctl">Sort
+              <select id="daily-sort">
+                <option value="best">Best match</option>
+                <option value="fit">Highest fit %</option>
+                <option value="new">Newest</option>
+              </select>
+            </label>
+            <input type="search" id="daily-loc" class="daily-loc" placeholder="Filter by location… (e.g. UK)">
+            <label class="hide-rejected-toggle" title="Hide roles that require a language you don't speak"><input type="checkbox" id="daily-hide-lang"> Hide other-language roles</label>
+          </div>
           <div class="discover-grid" id="daily-grid"></div>
         </div>
 
@@ -169,6 +180,17 @@
         <div class="saved-searches" id="saved-searches" hidden></div>
         <p class="discover-status" id="discover-status">Search above, or pick a saved search, to see live remote roles.</p>
         <div class="discover-grid" id="discover-grid"></div>
+
+        <div class="discover-divider"><span>Follow companies</span></div>
+        <div class="follow-companies" id="follow-companies">
+          <p class="funnel-sub">Follow a company's careers board (Greenhouse, Lever or Ashby) and its new remote roles are pulled into your picks. Companies whose jobs you Track are followed automatically.</p>
+          <form class="follow-form" id="follow-form">
+            <input type="search" id="follow-input" placeholder="Company name or handle (e.g. spotify)">
+            <button class="ghost-button" id="follow-btn" type="submit">Follow</button>
+          </form>
+          <p class="follow-status" id="follow-status"></p>
+          <div class="followed-list" id="followed-list"></div>
+        </div>
       </section>
 
       <section class="funnel-section" id="funnel-section" hidden>

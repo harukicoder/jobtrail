@@ -1360,6 +1360,11 @@
   const DAILY_TARGET = 65;
   const SALARY_FLOOR_GBP = 25000;
   let dailyPicks = [];
+  let dailySort = "best";
+  try { dailySort = localStorage.getItem("jobtrail_daily_sort") || "best"; } catch (_) { /* ignore */ }
+  let dailyLoc = "";
+  let dailyHideLang = false;
+  try { dailyHideLang = localStorage.getItem("jobtrail_daily_hide_lang") === "1"; } catch (_) { /* ignore */ }
 
   function todayStr() { return new Date().toISOString().slice(0, 10); }
 
@@ -1424,15 +1429,35 @@
     const grid = $("daily-grid");
     const status = $("daily-status");
     const count = $("daily-count");
+    const controls = $("daily-controls");
     if (!grid) return;
     if (!dailyPicks.length) {
       grid.innerHTML = "";
       if (count) count.textContent = "";
+      if (controls) controls.hidden = true;
       return;
     }
-    if (count) count.textContent = `· ${dailyPicks.length}`;
-    if (status) status.textContent = `${dailyPicks.length} fresh remote role${dailyPicks.length === 1 ? "" : "s"} for ${todayStr()} — region-locked and under £${(SALARY_FLOOR_GBP / 1000)}k roles filtered out.`;
-    grid.innerHTML = dailyPicks.map(discoverCardHtml).join("");
+    if (controls) controls.hidden = false;
+
+    let list = dailyPicks.slice();
+    const locQ = (dailyLoc || "").trim().toLowerCase();
+    if (locQ) list = list.filter((rj) => String(rj.candidate_required_location || "").toLowerCase().includes(locQ));
+    if (dailyHideLang) list = list.filter((rj) => !(rj._lang && rj._lang.requiredOther.length));
+    if (dailySort === "fit") list.sort((a, b) => (b._fit || 0) - (a._fit || 0));
+    else if (dailySort === "new") list.sort((a, b) => (new Date(b.publishedAt).getTime() || 0) - (new Date(a.publishedAt).getTime() || 0));
+    // "best" keeps the pickScore ordering dailyPicks already carries.
+
+    if (count) count.textContent = `· ${list.length}`;
+    if (!list.length) {
+      grid.innerHTML = "";
+      if (status) status.textContent = "No picks match these filters — clear the location/language filters to see all.";
+      return;
+    }
+    if (status) {
+      const shownNote = list.length === dailyPicks.length ? "" : ` of ${dailyPicks.length}`;
+      status.textContent = `${list.length}${shownNote} fresh remote role${list.length === 1 ? "" : "s"} for ${todayStr()} — region-locked and under £${(SALARY_FLOOR_GBP / 1000)}k roles filtered out.`;
+    }
+    grid.innerHTML = list.map(discoverCardHtml).join("");
   }
 
   async function loadDailyPicks(force) {
@@ -1498,10 +1523,62 @@
     try { fetch("/.netlify/functions/ats-refresh-background").catch(() => {}); } catch (_) { /* ignore */ }
   }
 
+  // ---- Follow companies (explicit) ---------------------------------------
+  function titleizeToken(t) {
+    return String(t || "").replace(/[-_]+/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+  }
+  function renderFollowed(companies) {
+    const wrap = $("followed-list");
+    if (!wrap) return;
+    const all = [];
+    ["greenhouse", "lever", "ashby"].forEach((p) => ((companies && companies[p]) || []).forEach((t) => all.push({ p, t })));
+    if (!all.length) { wrap.innerHTML = `<span class="followed-empty">No followed companies yet — Track a role or add one above.</span>`; return; }
+    wrap.innerHTML = all.map(({ p, t }) =>
+      `<span class="followed-chip"><span class="followed-name">${escapeHtml(titleizeToken(t))}</span><span class="followed-src">${escapeHtml(p)}</span><button type="button" class="followed-del" data-action="unfollow" data-p="${escapeHtml(p)}" data-t="${escapeHtml(t)}" title="Unfollow">×</button></span>`
+    ).join("");
+  }
+  function loadFollowed() {
+    fetch("/api/ats-company").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d && d.companies) renderFollowed(d.companies); }).catch(() => {});
+  }
+  async function followCompany() {
+    const input = $("follow-input");
+    const status = $("follow-status");
+    const name = (input && input.value || "").trim();
+    if (!name) return;
+    if (status) status.textContent = `Looking for “${name}” on Greenhouse, Lever & Ashby…`;
+    try {
+      const res = await fetch("/api/ats-resolve?name=" + encodeURIComponent(name));
+      const d = await res.json();
+      if (!d.matches || !d.matches.length) {
+        if (status) status.textContent = `Couldn't find a board for “${name}”. Try the exact careers handle from the company's job URL.`;
+        return;
+      }
+      await fetch("/api/ats-company", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ companies: d.matches.map((m) => ({ platform: m.platform, token: m.token })) })
+      });
+      const total = d.matches.reduce((n, m) => n + (m.count || 0), 0);
+      const via = d.matches.map((m) => `${m.platform} (${m.count})`).join(", ");
+      if (status) status.textContent = `Following ${d.matches[0].company || name} — ${total} live role${total === 1 ? "" : "s"} via ${via}. New picks appear after the next refresh.`;
+      if (input) input.value = "";
+      pingAtsRefresh();
+      loadFollowed();
+    } catch (_) {
+      if (status) status.textContent = "Couldn't reach the follow service — this needs the live site (Netlify functions).";
+    }
+  }
+  function unfollowCompany(platform, token) {
+    fetch("/api/ats-company", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ remove: { platform, token } })
+    }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d && d.companies) renderFollowed(d.companies); }).catch(() => {});
+  }
+
   function onEnterDiscover() {
     renderSavedSearches();
     updateDiscoverDot();
     pingAtsRefresh();
+    loadFollowed();
     loadDailyPicks(false);
   }
 
@@ -1533,6 +1610,37 @@
   }
   const dailyRefreshBtn = $("daily-refresh");
   if (dailyRefreshBtn) dailyRefreshBtn.addEventListener("click", () => loadDailyPicks(true));
+  const followForm = $("follow-form");
+  if (followForm) followForm.addEventListener("submit", (e) => { e.preventDefault(); followCompany(); });
+  const followedListEl = $("followed-list");
+  if (followedListEl) {
+    followedListEl.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-action='unfollow']");
+      if (btn) unfollowCompany(btn.dataset.p, btn.dataset.t);
+    });
+  }
+  const dailySortSel = $("daily-sort");
+  if (dailySortSel) {
+    dailySortSel.value = dailySort;
+    dailySortSel.addEventListener("change", () => {
+      dailySort = dailySortSel.value || "best";
+      try { localStorage.setItem("jobtrail_daily_sort", dailySort); } catch (_) { /* ignore */ }
+      renderDailyPicks();
+    });
+  }
+  const dailyLocInput = $("daily-loc");
+  if (dailyLocInput) {
+    dailyLocInput.addEventListener("input", () => { dailyLoc = dailyLocInput.value || ""; renderDailyPicks(); });
+  }
+  const dailyHideLangToggle = $("daily-hide-lang");
+  if (dailyHideLangToggle) {
+    dailyHideLangToggle.checked = dailyHideLang;
+    dailyHideLangToggle.addEventListener("change", () => {
+      dailyHideLang = dailyHideLangToggle.checked;
+      try { localStorage.setItem("jobtrail_daily_hide_lang", dailyHideLang ? "1" : "0"); } catch (_) { /* ignore */ }
+      renderDailyPicks();
+    });
+  }
   const savedSearchesEl = $("saved-searches");
   if (savedSearchesEl) {
     savedSearchesEl.addEventListener("click", (e) => {
@@ -3267,9 +3375,9 @@
   }
 
   function fitScoreColor(score) {
-    if (score >= 75) return "#0f766e"; // teal — strong fit
-    if (score >= 50) return "#d97706"; // amber — partial
-    return "#b91c1c";                  // red — weak
+    if (score >= 70) return "#0f766e"; // teal — strong fit
+    if (score >= 45) return "#9a7b3f"; // muted amber — partial
+    return "#6b7f82";                  // neutral grey — weak (calm, not alarming)
   }
 
   function renderFitAnalysis(fit) {
