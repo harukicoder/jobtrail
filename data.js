@@ -627,6 +627,9 @@
       status,
       salary: String(input.salary || "").trim(),
       dateApplied: String(input.dateApplied || "").trim(),
+      // When the role was originally posted (from the source feed / page), so
+      // we can show how quickly the user applied after posting.
+      postedAt: String(input.postedAt || "").trim(),
       notes: String(input.notes || "").trim(),
       description,
       sourceHost,

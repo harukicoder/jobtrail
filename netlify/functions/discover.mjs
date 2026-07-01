@@ -29,21 +29,33 @@ function stripHtml(html) {
     .trim();
 }
 
+// Decode HTML/XML entities that feed titles carry (WeWorkRemotely's RSS encodes
+// "&" as "&amp;", plus numeric entities like "&#39;"). Named "&amp;" is decoded
+// first so double-encoded sequences ("&amp;#39;") resolve in one pass.
+function decodeEntities(s) {
+  return String(s || "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&nbsp;/g, " ")
+    .replace(/&#x([0-9a-f]+);/gi, (_m, h) => { try { return String.fromCodePoint(parseInt(h, 16)); } catch (_) { return ""; } })
+    .replace(/&#(\d+);/g, (_m, d) => { try { return String.fromCodePoint(parseInt(d, 10)); } catch (_) { return ""; } });
+}
+
 function normalize(j) {
   return {
     id: String(j.id || ""),
     source: j.source || "",
     workMode: "Remote", // every source here is remote-only by construction
-    title: String(j.title || "").trim(),
-    company: String(j.company || "").trim(),
+    title: decodeEntities(String(j.title || "").trim()),
+    company: decodeEntities(String(j.company || "").trim()),
     companyLogo: j.companyLogo || "",
     category: j.category || "",
     jobType: j.jobType || "",
-    candidate_required_location: String(j.candidate_required_location || "").trim(),
+    candidate_required_location: decodeEntities(String(j.candidate_required_location || "").trim()),
     salary: String(j.salary || "").trim(),
     url: j.url || "",
     publishedAt: j.publishedAt || "",
-    description: stripHtml(j.description).slice(0, 4000)
+    description: decodeEntities(stripHtml(j.description)).slice(0, 4000)
   };
 }
 

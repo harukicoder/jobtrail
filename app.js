@@ -322,6 +322,7 @@
     const src = dataset && typeof dataset === "object" ? dataset : {};
     state.jobs = (src.jobs || []).map((j) => data.sanitizeJob(j));
     state.profile = src.profile || null;
+    invalidateProfileKw();
     state.autofillMappings = src.autofillMappings || {};
     state.loaded = true;
   }
@@ -474,6 +475,63 @@
     return data.assessRemoteEligibility(j, homeCountry());
   }
 
+  // ---- Quick keyword fit (no AI) -----------------------------------------
+  // A free, instant estimate of how well a role matches the user's CV/profile,
+  // by keyword overlap. Used to show a fit % on Discover cards and rank picks.
+  const FIT_STOPWORDS = new Set(("the a an and or of to in for with on at by from as is are be we you our your " +
+    "their its it this that these those will can new work role team job across who what into help build using use " +
+    "strong plus etc via per within about more most other than then them they experience years year ability skills").split(/\s+/));
+  let _profileKwCache = null;
+  function invalidateProfileKw() { _profileKwCache = null; }
+  function tokenizeKeywords(text) {
+    const out = new Set();
+    String(text || "").toLowerCase().split(/[^a-z0-9+#.]+/).forEach((w) => {
+      w = w.replace(/^\.+|\.+$/g, "");
+      if (w.length >= 3 && !FIT_STOPWORDS.has(w) && !/^\d+$/.test(w)) out.add(w);
+    });
+    return out;
+  }
+  function profileKeywords() {
+    if (_profileKwCache) return _profileKwCache;
+    const p = state.profile || {};
+    const section = data.findActiveSection ? data.findActiveSection(p) : null;
+    const cv = (section && section.resumeText) || "";
+    const extra = [p.headline, p.summary, p.skills]
+      .map((x) => (Array.isArray(x) ? x.join(" ") : String(x || ""))).join(" ");
+    _profileKwCache = tokenizeKeywords(cv + " " + extra);
+    return _profileKwCache;
+  }
+  function quickFitScore(rj) {
+    const kw = profileKeywords();
+    if (!kw || kw.size < 5) return null; // no meaningful CV → no fit to show
+    const titleTok = tokenizeKeywords(rj.title || rj.jobTitle || "");
+    const descTok = tokenizeKeywords(rj.description || "");
+    if (titleTok.size + descTok.size === 0) return null;
+    const overlap = (set) => { if (!set.size) return 0; let h = 0; set.forEach((t) => { if (kw.has(t)) h += 1; }); return h / set.size; };
+    const score = Math.round(100 * (0.6 * overlap(titleTok) + 0.4 * overlap(descTok)));
+    return Math.max(0, Math.min(100, score));
+  }
+
+  // Days between a role being posted and the user applying — surfaced on the
+  // pipeline so they can see how quickly they got their application in.
+  function appliedAfterPostingDays(job) {
+    if (!job || !job.postedAt || !job.dateApplied) return null;
+    const p = new Date(job.postedAt), a = new Date(job.dateApplied);
+    if (isNaN(p.getTime()) || isNaN(a.getTime())) return null;
+    const d = Math.round((a.getTime() - p.getTime()) / 86400000);
+    return d >= 0 ? d : null;
+  }
+
+  // Fit tiers for classifying the pipeline by AI fit-analysis score.
+  function fitTier(job) {
+    const s = job && job.aiFitAnalysis && typeof job.aiFitAnalysis.score === "number" ? job.aiFitAnalysis.score : null;
+    if (s == null) return "unscored";
+    if (s >= 80) return "strong";
+    if (s >= 65) return "good";
+    if (s >= 50) return "fair";
+    return "weak";
+  }
+
   async function setJobStatusInline(id, newStatus) {
     const job = state.jobs.find((j) => j.id === id);
     if (!job || job.status === newStatus) return;
@@ -508,6 +566,8 @@
   try { remoteOnly = localStorage.getItem("jobtrail_remote_only") === "1"; } catch (_) { /* ignore */ }
   let hideRestricted = false;
   try { hideRestricted = localStorage.getItem("jobtrail_hide_restricted") === "1"; } catch (_) { /* ignore */ }
+  let fitFilter = "all";
+  try { fitFilter = localStorage.getItem("jobtrail_fit_filter") || "all"; } catch (_) { /* ignore */ }
 
   const STALE_DAYS = 60;
   // A "stale" application: still sitting at Applied (no interview yet) and the
@@ -632,6 +692,7 @@
         if (hideRestricted && e.eligibility === "restricted") return false;
       }
       if (status && j.status !== status) return false;
+      if (fitFilter !== "all" && fitTier(j) !== fitFilter) return false;
       if (activeTypeFilter !== "all" && typeBucket(j) !== activeTypeFilter) return false;
       if (!q) return true;
       const hay = [j.jobTitle, j.company, j.location, j.workMode, j.jobType, j.notes].join(" ").toLowerCase();
@@ -677,7 +738,10 @@
           <td>${j.jobType ? escapeHtml(j.jobType) : '<span class="cell-muted">—</span>'}</td>
           <td>${statusSelectCell(j)}</td>
           <td class="fit-cell">${fitCell(j)}</td>
-          <td>${escapeHtml(j.dateApplied || "")}</td>
+          <td>${escapeHtml(j.dateApplied || "")}${(() => {
+            const d = appliedAfterPostingDays(j);
+            return d != null ? ` <span class="posting-delay" title="Applied ${d} day${d === 1 ? "" : "s"} after this role was posted">+${d}d</span>` : "";
+          })()}</td>
           <td>
             <div class="row-actions">
               <button class="primary-button" data-action="edit" data-id="${escapeHtml(j.id)}">Edit</button>
@@ -943,26 +1007,28 @@
     } else {
       badge = `<span class="disc-badge disc-unknown">Region unclear</span>`;
     }
-    const loc = rj.candidate_required_location || "Remote";
+    const loc = decodeEntities(rj.candidate_required_location || "Remote");
     const tracked = alreadyTracked(rj);
     const trackBtn = tracked
       ? `<button class="ghost-button" disabled>✓ Tracked</button>`
       : `<button class="primary-button" data-action="track-discover" data-id="${escapeHtml(rj.id)}">+ Track</button>`;
     const published = rj.publishedAt ? formatRelative(rj.publishedAt) : "";
+    const postedAbs = rj.publishedAt ? absoluteDate(rj.publishedAt) : "";
     return `
       <article class="disc-card" data-elig="${elig.eligibility}">
         <div class="disc-card-head">
           <div class="disc-card-title">
-            <strong>${escapeHtml(rj.title || "(untitled)")}</strong>
-            <span class="disc-company">${escapeHtml(rj.company || "")}</span>
+            <strong>${escapeHtml(decodeEntities(rj.title) || "(untitled)")}</strong>
+            <span class="disc-company">${escapeHtml(decodeEntities(rj.company))}</span>
           </div>
           ${badge}
         </div>
         <div class="disc-meta">
+          ${typeof rj._fit === "number" ? `<span class="disc-fit" style="--fit-color:${fitScoreColor(rj._fit)}" title="Keyword match to your CV — a quick estimate, not a full AI analysis">${rj._fit}% fit</span>` : ""}
           <span title="Accepted location">📍 ${escapeHtml(loc)}</span>
           ${rj.jobType ? `<span>• ${escapeHtml(String(rj.jobType).replace(/_/g, " "))}</span>` : ""}
           ${rj.salary ? `<span class="disc-salary">• 💷 ${escapeHtml(rj.salary)}</span>` : ""}
-          ${published ? `<span>• ${escapeHtml(published)}</span>` : ""}
+          ${published ? `<span title="Posted ${escapeHtml(postedAbs)}">• Posted ${escapeHtml(published)}</span>` : ""}
           ${rj.source ? `<span class="disc-source" title="Source board">${escapeHtml(rj.source)}</span>` : ""}
         </div>
         <div class="disc-actions">
@@ -981,6 +1047,21 @@
     if (days < 30) return days + " days ago";
     const months = Math.floor(days / 30);
     return months === 1 ? "1 month ago" : months + " months ago";
+  }
+  function absoluteDate(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  }
+  // Client-side entity decode as a safety net for anything cached before the
+  // server-side fix landed (WeWorkRemotely titles carry "&amp;" etc.).
+  function decodeEntities(s) {
+    return String(s || "")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&nbsp;/g, " ")
+      .replace(/&#x([0-9a-f]+);/gi, (_m, h) => { try { return String.fromCodePoint(parseInt(h, 16)); } catch (_) { return ""; } })
+      .replace(/&#(\d+);/g, (_m, dd) => { try { return String.fromCodePoint(parseInt(dd, 10)); } catch (_) { return ""; } });
   }
 
   function renderDiscoverResults() {
@@ -1028,6 +1109,7 @@
     discoverLoadedOnce = true;
     try {
       discoverResults = await fetchDiscover(q);
+      discoverResults.forEach((rj) => { rj._fit = quickFitScore(rj); });
       // If this came from / matches a saved search, mark its current results seen.
       markSavedSearchSeen(q, discoverResults);
       renderDiscoverResults();
@@ -1163,14 +1245,15 @@
     if (alreadyTracked(rj)) { toast("Already in your pipeline."); return; }
     const elig = data.assessRemoteEligibility(rj, homeCountry());
     const sanitized = data.sanitizeJob({
-      jobTitle: rj.title,
-      company: rj.company,
+      jobTitle: decodeEntities(rj.title),
+      company: decodeEntities(rj.company),
       url: rj.url,
       workMode: "Remote",
-      location: rj.candidate_required_location || "Remote",
+      location: decodeEntities(rj.candidate_required_location || "Remote"),
       jobType: (rj.jobType || "").replace(/_/g, " "),
       salary: rj.salary || "",
-      description: rj.description || "",
+      postedAt: rj.publishedAt || "",
+      description: decodeEntities(rj.description || ""),
       status: "bookmarked",
       notes: elig.eligibility === "restricted" ? `⚠ Region note: ${elig.reason}` : ""
     });
@@ -1242,9 +1325,10 @@
     const elig = data.assessRemoteEligibility(rj, homeCountry());
     if (elig.eligibility === "eligible") s += 30;
     else if (elig.eligibility === "unknown") s += 10;
-    if (parseAnnualGbp(rj.salary) != null) s += 15;
+    if (typeof rj._fit === "number") s += rj._fit * 0.6; // fit dominates ordering (up to +60)
+    if (parseAnnualGbp(rj.salary) != null) s += 12;
     const ts = new Date(rj.publishedAt).getTime();
-    if (!isNaN(ts)) s += Math.max(0, 20 - ((Date.now() - ts) / 86400000) * 3);
+    if (!isNaN(ts)) s += Math.max(0, 15 - ((Date.now() - ts) / 86400000) * 3);
     return s;
   }
 
@@ -1278,6 +1362,7 @@
     try {
       // Pull the latest broad batch, then filter + rank down to the target.
       const jobs = await fetchDiscover({ limit: 100 });
+      jobs.forEach((rj) => { rj._fit = quickFitScore(rj); });
       dailyPicks = jobs.filter(passesDailyFilter)
         .sort((a, b) => pickScore(b) - pickScore(a))
         .slice(0, DAILY_TARGET);
@@ -1762,6 +1847,15 @@
 
   jobsSearch.addEventListener("input", () => renderJobs());
   jobsFilterStatus.addEventListener("change", () => renderJobs());
+  const jobsFilterFit = $("jobs-filter-fit");
+  if (jobsFilterFit) {
+    jobsFilterFit.value = fitFilter;
+    jobsFilterFit.addEventListener("change", () => {
+      fitFilter = jobsFilterFit.value || "all";
+      try { localStorage.setItem("jobtrail_fit_filter", fitFilter); } catch (_) { /* ignore */ }
+      renderJobs();
+    });
+  }
   const hideRejectedToggle = $("hide-rejected");
   if (hideRejectedToggle) {
     hideRejectedToggle.checked = hideRejected;
@@ -2851,6 +2945,7 @@
       syncSavedAnswersFromDom();
       readProfileFormIntoState();
       state.profile = data.sanitizeProfile(state.profile);
+      invalidateProfileKw(); // CV may have changed → recompute fit keywords
       closeProfileModal();
       const saveResult = await saveToDrive();
       if (!saveResult.ok) return;

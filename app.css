@@ -1885,13 +1885,35 @@ button, input, select, textarea {
 /* Discover card source tag + salary emphasis */
 .disc-source {
   margin-left: auto;
-  font-size: 10.5px;
+  font-size: 9.5px;
   font-weight: 700;
-  letter-spacing: 0.03em;
-  color: var(--teal-700);
-  background: var(--teal-50);
-  border: 1px solid var(--line);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.disc-salary { color: var(--text-soft); font-weight: 600; }
+.disc-fit {
+  font-weight: 800;
+  font-size: 11px;
+  color: var(--fit-color, var(--teal-700));
+  background: color-mix(in srgb, var(--fit-color, var(--teal-500)) 14%, transparent);
   border-radius: 999px;
   padding: 1px 8px;
 }
-.disc-salary { color: var(--text-soft); font-weight: 600; }
+
+/* "Applied N days after posting" marker on pipeline rows */
+.posting-delay {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 6px;
+  margin-left: 4px;
+  white-space: nowrap;
+}

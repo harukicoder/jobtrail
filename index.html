@@ -198,6 +198,14 @@
             <select id="jobs-filter-status">
               <option value="">All statuses</option>
             </select>
+            <select id="jobs-filter-fit" title="Classify by AI fit-analysis score">
+              <option value="all">All fits</option>
+              <option value="strong">Strong (80+)</option>
+              <option value="good">Good (65–79)</option>
+              <option value="fair">Fair (50–64)</option>
+              <option value="weak">Needs work (&lt;50)</option>
+              <option value="unscored">Unscored</option>
+            </select>
             <label class="hide-rejected-toggle"><input type="checkbox" id="hide-rejected"> Hide rejected</label>
             <label class="hide-rejected-toggle" title="Hide applications submitted over 2 months ago with no response"><input type="checkbox" id="hide-stale"> Hide stale</label>
             <label class="hide-rejected-toggle" title="Show only remote roles"><input type="checkbox" id="remote-only"> Remote only</label>
