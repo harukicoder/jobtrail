@@ -19,7 +19,10 @@
     "currentTitle",
     "linkedinUrl",
     "githubUrl",
-    "portfolioUrl"
+    "portfolioUrl",
+    // Languages the user can work in ("English, French, Spanish") — drives the
+    // Discover language-requirement flags.
+    "languages"
   ];
 
   const PROFILE_SECTION_FIELDS = [

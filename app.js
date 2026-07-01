@@ -539,10 +539,18 @@
   }
 
   // ---- Language requirements ---------------------------------------------
-  // Flag roles that require a language: French/Spanish are a plus (the user
-  // speaks them), English is baseline, anything else is a blocker. Also
-  // separate hard "required" from soft "recommended".
-  const KNOWN_LANGS = ["english", "french", "spanish"]; // languages the user speaks
+  // Flag roles that require a language: ones the user speaks are a plus,
+  // English is baseline, anything else is a blocker. Also separate hard
+  // "required" from soft "recommended".
+  const DEFAULT_KNOWN_LANGS = ["english", "french", "spanish"];
+  function knownLanguages() {
+    const raw = String((state.profile && state.profile.languages) || "").trim();
+    if (!raw) return DEFAULT_KNOWN_LANGS;
+    const parsed = raw.toLowerCase().split(/[,;/]+/).map((s) => s.trim()).filter(Boolean);
+    // English is always baseline even if the user forgets to list it.
+    if (parsed.length && parsed.indexOf("english") === -1) parsed.push("english");
+    return parsed.length ? parsed : DEFAULT_KNOWN_LANGS;
+  }
   const LANGUAGES = [
     ["English", /\benglish\b/i],
     ["French", /\bfrench\b|\bfran[çc]ais\b/i],
@@ -571,7 +579,7 @@
   function detectLanguageNeeds(text) {
     const hay = String(text || "");
     if (!hay) return null;
-    const known = new Set(KNOWN_LANGS);
+    const known = new Set(knownLanguages());
     const out = { requiredKnown: [], requiredOther: [], recommended: [] };
     const seen = new Set();
     // Split into short clauses so a "required"/"a plus" keyword binds to the
@@ -1028,6 +1036,32 @@
   let discoverHideLang = false;
   try { discoverHideLang = localStorage.getItem("jobtrail_discover_hide_lang") === "1"; } catch (_) { /* ignore */ }
 
+  // "Not interested" blocklist: roles the user dismissed never reappear in
+  // picks or search results. Keyed by feed id AND title@company fingerprint so
+  // the same role re-posted (or served by another board) stays hidden.
+  const DISMISSED_KEY = "jobtrail_dismissed_roles";
+  let dismissedRoles = new Set();
+  try { dismissedRoles = new Set(JSON.parse(localStorage.getItem(DISMISSED_KEY) || "[]")); } catch (_) { dismissedRoles = new Set(); }
+  function roleFingerprint(rj) {
+    return data.normalizeText(decodeEntities(rj.title || "")) + "@" + data.normalizeText(decodeEntities(rj.company || ""));
+  }
+  function isDismissed(rj) {
+    return dismissedRoles.has(String(rj.id || "")) || dismissedRoles.has(roleFingerprint(rj));
+  }
+  function dismissRole(id) {
+    const rj = findDiscoverJob(id);
+    if (!rj) return;
+    dismissedRoles.add(String(rj.id || ""));
+    dismissedRoles.add(roleFingerprint(rj));
+    try {
+      // Cap so the list can't grow unbounded over months of daily use.
+      localStorage.setItem(DISMISSED_KEY, JSON.stringify([...dismissedRoles].slice(-3000)));
+    } catch (_) { /* ignore */ }
+    renderDailyPicks();
+    renderDiscoverResults();
+    toast("Hidden — this role won't be shown again");
+  }
+
   function loadSavedSearches() {
     try {
       const raw = JSON.parse(localStorage.getItem(SAVED_SEARCHES_KEY) || "[]");
@@ -1103,7 +1137,9 @@
         </div>
         ${langBadges ? `<div class="disc-langs">${langBadges}</div>` : ""}
         <div class="disc-meta">
-          ${typeof rj._fit === "number" ? `<span class="disc-fit" style="--fit-color:${fitScoreColor(rj._fit)}" title="Keyword match to your CV — a quick estimate, not a full AI analysis">${rj._fit}% fit</span>` : ""}
+          ${rj._aiFit && typeof rj._aiFit.score === "number"
+            ? `<span class="disc-fit disc-fit-ai" style="--fit-color:${fitScoreColor(rj._aiFit.score)}" title="${escapeHtml(rj._aiFit.summary || "AI CV ↔ JD analysis")}">✦ AI ${rj._aiFit.score}</span>`
+            : (typeof rj._fit === "number" ? `<span class="disc-fit" style="--fit-color:${fitScoreColor(rj._fit)}" title="Keyword match to your CV — a quick estimate, not a full AI analysis">${rj._fit}% fit</span>` : "")}
           <span title="Accepted location">📍 ${escapeHtml(loc)}</span>
           ${rj.jobType ? `<span>• ${escapeHtml(String(rj.jobType).replace(/_/g, " "))}</span>` : ""}
           ${rj.salary ? `<span class="disc-salary">• 💷 ${escapeHtml(rj.salary)}</span>` : ""}
@@ -1113,6 +1149,8 @@
         <div class="disc-actions">
           <a class="ghost-button" href="${escapeHtml(rj.url)}" target="_blank" rel="noopener noreferrer">View posting ↗</a>
           ${trackBtn}
+          ${rj._aiFit ? "" : `<button class="ghost-button" data-action="ai-fit" data-id="${escapeHtml(rj.id)}" title="Run your real AI CV ↔ JD fit analysis on this role">✦ AI fit</button>`}
+          <button class="disc-dismiss" data-action="dismiss-discover" data-id="${escapeHtml(rj.id)}" title="Not interested — never show this role again">✕</button>
         </div>
       </article>`;
   }
@@ -1150,7 +1188,7 @@
     if (!grid) return;
     if (controls) controls.hidden = discoverResults.length === 0;
     const eligibleOnly = $("discover-eligible-only") && $("discover-eligible-only").checked;
-    let list = discoverResults.slice();
+    let list = discoverResults.filter((rj) => !isDismissed(rj));
     if (eligibleOnly) {
       list = list.filter((rj) => data.assessRemoteEligibility(rj, homeCountry()).eligibility !== "restricted");
     }
@@ -1345,6 +1383,8 @@
       postedAt: rj.publishedAt || "",
       description: decodeEntities(rj.description || ""),
       status: "bookmarked",
+      // A card-level AI fit run carries straight into the pipeline's Fit column.
+      aiFitAnalysis: rj._aiFit || undefined,
       notes: elig.eligibility === "restricted" ? `⚠ Region note: ${elig.reason}` : ""
     });
     state.jobs.unshift(sanitized);
@@ -1374,6 +1414,96 @@
   try { dailyHideLang = localStorage.getItem("jobtrail_daily_hide_lang") === "1"; } catch (_) { /* ignore */ }
 
   function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+  // ---- On-demand AI fit for a discovered role ------------------------------
+  // The keyword % fit is a rough proxy; this runs the real BYOK CV↔JD analysis
+  // for one card at a time (cheap — only the roles the user is curious about).
+
+  // Greenhouse feeds ship without a description (keeps the crawl cache small).
+  // Their board API allows CORS, so pull the single job's content on demand.
+  async function discoverJobDescription(rj) {
+    if (rj.description && rj.description.length > 120) return rj.description;
+    const m = /^gh-([a-z0-9-]+)-(\d+)$/.exec(String(rj.id || ""));
+    if (m) {
+      try {
+        const r = await fetch(`https://boards-api.greenhouse.io/v1/boards/${m[1]}/jobs/${m[2]}`);
+        if (r.ok) {
+          const d = await r.json();
+          const text = decodeEntities(String(d.content || "")).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+          if (text) { rj.description = text.slice(0, 6000); return rj.description; }
+        }
+      } catch (_) { /* fall through to whatever we have */ }
+    }
+    return rj.description || "";
+  }
+
+  // Write an updated pick (new AI fit, fetched JD) back into the day's cache
+  // so it survives reloads for the rest of the day.
+  function persistDailyPickPatch(rj) {
+    try {
+      const cached = JSON.parse(localStorage.getItem(DAILY_PICKS_KEY) || "null");
+      if (!cached || !Array.isArray(cached.jobs)) return;
+      const idx = cached.jobs.findIndex((j) => j.id === rj.id);
+      if (idx !== -1) { cached.jobs[idx] = rj; localStorage.setItem(DAILY_PICKS_KEY, JSON.stringify(cached)); }
+    } catch (_) { /* ignore quota */ }
+  }
+
+  async function runDiscoverAiFit(id, btn) {
+    const rj = findDiscoverJob(id);
+    if (!rj || !window.JobTrailAI) return;
+    const p = state.profile || {};
+    const ai = p.ai || { provider: "none" };
+    if (ai.provider === "none" || !ai.apiKey) {
+      toast("Set an AI provider + API key in Profile first.", { error: true });
+      openProfileModal();
+      return;
+    }
+    const section = data.findActiveSection(p);
+    const cv = ((section && section.resumeText) || "").trim();
+    if (!cv) {
+      toast("Paste your CV in Profile first.", { error: true });
+      openProfileModal();
+      return;
+    }
+    const originalLabel = btn ? btn.textContent : "";
+    if (btn) { btn.disabled = true; btn.textContent = "Analyzing…"; }
+    try {
+      const jd = await discoverJobDescription(rj);
+      if (!jd || jd.length < 80) {
+        toast("No description available for this role — open the posting instead.", { error: true });
+        return;
+      }
+      const raw = await window.JobTrailAI.generate({
+        provider: ai.provider,
+        apiKey: ai.apiKey,
+        model: ai.model,
+        system: FIT_SYSTEM_PROMPT,
+        user: buildFitPrompt({ cv, jd }),
+        responseFormat: "json"
+      });
+      const parsed = extractJson(raw);
+      if (!parsed || typeof parsed.score !== "number") throw new Error("Model returned malformed JSON");
+      rj._aiFit = data.sanitizeAiFitAnalysis({
+        score: parsed.score,
+        strengths: parsed.strengths,
+        missing: parsed.missing,
+        summary: parsed.summary,
+        model: ai.model || "",
+        provider: ai.provider,
+        inputsHash: data.hashFitInputs({ cv, jd }),
+        generatedAt: new Date().toISOString()
+      });
+      persistDailyPickPatch(rj);
+      renderDailyPicks();
+      renderDiscoverResults();
+      toast(`AI fit: ${rj._aiFit.score}/100`);
+    } catch (err) {
+      toast("AI fit failed: " + (err && err.message ? err.message : "unknown error"), { error: true });
+    } finally {
+      // Re-render may have replaced the button; only restore if it's still live.
+      if (btn && document.contains(btn)) { btn.disabled = false; btn.textContent = originalLabel; }
+    }
+  }
 
   // Best-effort annual-GBP estimate from Remotive's free-text salary strings
   // (e.g. "$120k - $150k", "£40,000", "€50k / year", "$30/hr"). Returns null
@@ -1405,6 +1535,7 @@
   // roles whose listed pay is below the floor (unlisted salary is kept), and
   // drop anything already in your pipeline — tracked or rejected.
   function passesDailyFilter(rj) {
+    if (isDismissed(rj)) return false;
     if (alreadyTracked(rj)) return false;
     const elig = data.assessRemoteEligibility(rj, homeCountry());
     if (elig.eligibility === "restricted") return false;
@@ -1446,7 +1577,7 @@
     }
     if (controls) controls.hidden = false;
 
-    let list = dailyPicks.slice();
+    let list = dailyPicks.filter((rj) => !isDismissed(rj));
     const locQ = (dailyLoc || "").trim().toLowerCase();
     if (locQ) list = list.filter((rj) => String(rj.candidate_required_location || "").toLowerCase().includes(locQ));
     if (dailyHideLang) list = list.filter((rj) => !(rj._lang && rj._lang.requiredOther.length));
@@ -1606,20 +1737,17 @@
   const discoverSaveBtn = $("discover-save-btn");
   if (discoverSaveBtn) discoverSaveBtn.addEventListener("click", saveCurrentSearch);
 
+  function discoverGridClick(e) {
+    const btn = e.target.closest("[data-action]");
+    if (!btn) return;
+    if (btn.dataset.action === "track-discover") trackDiscoverJob(btn.dataset.id);
+    else if (btn.dataset.action === "ai-fit") runDiscoverAiFit(btn.dataset.id, btn);
+    else if (btn.dataset.action === "dismiss-discover") dismissRole(btn.dataset.id);
+  }
   const discoverGrid = $("discover-grid");
-  if (discoverGrid) {
-    discoverGrid.addEventListener("click", (e) => {
-      const btn = e.target.closest("[data-action='track-discover']");
-      if (btn) trackDiscoverJob(btn.dataset.id);
-    });
-  }
+  if (discoverGrid) discoverGrid.addEventListener("click", discoverGridClick);
   const dailyGrid = $("daily-grid");
-  if (dailyGrid) {
-    dailyGrid.addEventListener("click", (e) => {
-      const btn = e.target.closest("[data-action='track-discover']");
-      if (btn) trackDiscoverJob(btn.dataset.id);
-    });
-  }
+  if (dailyGrid) dailyGrid.addEventListener("click", discoverGridClick);
   const dailyRefreshBtn = $("daily-refresh");
   if (dailyRefreshBtn) dailyRefreshBtn.addEventListener("click", () => loadDailyPicks(true));
   const followForm = $("follow-form");
@@ -2758,7 +2886,7 @@
   const COMMON_PROFILE_INPUTS = [
     "firstName", "lastName", "email", "phone",
     "city", "country", "currentCompany", "currentTitle",
-    "linkedinUrl", "githubUrl", "portfolioUrl"
+    "linkedinUrl", "githubUrl", "portfolioUrl", "languages"
   ];
   const SECTION_PROFILE_INPUTS = [
     "yearsExperience", "desiredSalary", "workAuthorization",

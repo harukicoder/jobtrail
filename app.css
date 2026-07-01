@@ -2012,3 +2012,24 @@ button, input, select, textarea {
   border-radius: 50%;
 }
 .followed-del:hover { color: #c0626b; }
+
+/* On-demand AI fit pill (real analysis, distinct from the keyword estimate) */
+.disc-fit-ai {
+  background: color-mix(in srgb, var(--fit-color, var(--teal-500)) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fit-color, var(--teal-500)) 35%, transparent);
+}
+
+/* "Not interested" dismiss on Discover cards — quiet until hovered */
+.disc-dismiss {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  opacity: 0.55;
+}
+.disc-dismiss:hover { opacity: 1; color: #c0626b; background: rgba(192, 98, 107, 0.10); }
