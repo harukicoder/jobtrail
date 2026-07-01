@@ -984,31 +984,25 @@
   // ---------- View switching ----------
 
   function setView(view) {
-    currentView = (view === "funnel" || view === "analytics" || view === "discover") ? view : "pipeline";
+    const valid = ["pipeline", "picks", "discover", "companies", "funnel", "analytics"];
+    currentView = valid.indexOf(view) !== -1 ? view : "pipeline";
     document.querySelectorAll(".view-tab").forEach((btn) => {
       btn.classList.toggle("is-active", btn.dataset.view === currentView);
     });
-    const analyticsSection = $("analytics-section");
-    const discoverSection = $("discover-section");
-    if (analyticsSection) analyticsSection.hidden = currentView !== "analytics";
-    if (discoverSection) discoverSection.hidden = currentView !== "discover";
-    if (currentView === "analytics") {
-      jobsSection.hidden = true;
-      funnelSection.hidden = true;
-      renderAnalytics();
-    } else if (currentView === "funnel") {
-      jobsSection.hidden = true;
-      funnelSection.hidden = false;
-      renderFunnel();
-    } else if (currentView === "discover") {
-      jobsSection.hidden = true;
-      funnelSection.hidden = true;
-      onEnterDiscover();
-    } else {
-      funnelSection.hidden = true;
-      jobsSection.hidden = false;
-      renderJobs();
-    }
+    const show = (id, on) => { const el = $(id); if (el) el.hidden = !on; };
+    show("analytics-section", currentView === "analytics");
+    show("picks-section", currentView === "picks");
+    show("discover-section", currentView === "discover");
+    show("companies-section", currentView === "companies");
+    jobsSection.hidden = currentView !== "pipeline";
+    funnelSection.hidden = currentView !== "funnel";
+
+    if (currentView === "analytics") renderAnalytics();
+    else if (currentView === "funnel") renderFunnel();
+    else if (currentView === "picks") onEnterPicks();
+    else if (currentView === "discover") onEnterDiscover();
+    else if (currentView === "companies") onEnterCompanies();
+    else renderJobs();
   }
 
   if (viewTabs) {
@@ -1028,6 +1022,11 @@
   let discoverResults = [];
   let discoverLoadedOnce = false;
   let discoverActiveSavedId = null;
+  let discoverSort = "best";
+  try { discoverSort = localStorage.getItem("jobtrail_discover_sort") || "best"; } catch (_) { /* ignore */ }
+  let discoverLoc = "";
+  let discoverHideLang = false;
+  try { discoverHideLang = localStorage.getItem("jobtrail_discover_hide_lang") === "1"; } catch (_) { /* ignore */ }
 
   function loadSavedSearches() {
     try {
@@ -1147,12 +1146,20 @@
   function renderDiscoverResults() {
     const grid = $("discover-grid");
     const status = $("discover-status");
+    const controls = $("discover-controls-row");
     if (!grid) return;
+    if (controls) controls.hidden = discoverResults.length === 0;
     const eligibleOnly = $("discover-eligible-only") && $("discover-eligible-only").checked;
-    let list = discoverResults;
+    let list = discoverResults.slice();
     if (eligibleOnly) {
       list = list.filter((rj) => data.assessRemoteEligibility(rj, homeCountry()).eligibility !== "restricted");
     }
+    const locQ = (discoverLoc || "").trim().toLowerCase();
+    if (locQ) list = list.filter((rj) => String(rj.candidate_required_location || "").toLowerCase().includes(locQ));
+    if (discoverHideLang) list = list.filter((rj) => !(rj._lang && rj._lang.requiredOther.length));
+    if (discoverSort === "fit") list.sort((a, b) => (b._fit || 0) - (a._fit || 0));
+    else if (discoverSort === "new") list.sort((a, b) => (new Date(b.publishedAt).getTime() || 0) - (new Date(a.publishedAt).getTime() || 0));
+    else list.sort((a, b) => pickScore(b) - pickScore(a)); // "best" — same scoring as picks
     if (!list.length) {
       grid.innerHTML = "";
       if (status) status.textContent = discoverResults.length
@@ -1357,7 +1364,7 @@
   // is identical from your side: the first time you open the app on a new
   // calendar day, we fetch a fresh batch, filter it, and cache it for the day.
   const DAILY_PICKS_KEY = "jobtrail_daily_picks";
-  const DAILY_TARGET = 65;
+  const DAILY_TARGET = 200;
   const SALARY_FLOOR_GBP = 25000;
   let dailyPicks = [];
   let dailySort = "best";
@@ -1474,7 +1481,7 @@
     if (status) status.textContent = "Fetching today's remote picks…";
     try {
       // Pull the latest broad batch, then filter + rank down to the target.
-      const jobs = await fetchDiscover({ limit: 300 });
+      const jobs = await fetchDiscover({ limit: 600 });
       jobs.forEach((rj) => {
         rj._fit = quickFitScore(rj);
         rj._lang = detectLanguageNeeds((rj.title || "") + " " + (rj.description || ""));
@@ -1574,12 +1581,17 @@
     }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d && d.companies) renderFollowed(d.companies); }).catch(() => {});
   }
 
+  function onEnterPicks() {
+    pingAtsRefresh();
+    loadDailyPicks(false);
+  }
   function onEnterDiscover() {
     renderSavedSearches();
     updateDiscoverDot();
+  }
+  function onEnterCompanies() {
     pingAtsRefresh();
     loadFollowed();
-    loadDailyPicks(false);
   }
 
   const discoverForm = $("discover-form");
@@ -1639,6 +1651,28 @@
       dailyHideLang = dailyHideLangToggle.checked;
       try { localStorage.setItem("jobtrail_daily_hide_lang", dailyHideLang ? "1" : "0"); } catch (_) { /* ignore */ }
       renderDailyPicks();
+    });
+  }
+  const discoverSortSel = $("discover-sort");
+  if (discoverSortSel) {
+    discoverSortSel.value = discoverSort;
+    discoverSortSel.addEventListener("change", () => {
+      discoverSort = discoverSortSel.value || "best";
+      try { localStorage.setItem("jobtrail_discover_sort", discoverSort); } catch (_) { /* ignore */ }
+      renderDiscoverResults();
+    });
+  }
+  const discoverLocInput = $("discover-loc");
+  if (discoverLocInput) {
+    discoverLocInput.addEventListener("input", () => { discoverLoc = discoverLocInput.value || ""; renderDiscoverResults(); });
+  }
+  const discoverHideLangToggle = $("discover-hide-lang");
+  if (discoverHideLangToggle) {
+    discoverHideLangToggle.checked = discoverHideLang;
+    discoverHideLangToggle.addEventListener("change", () => {
+      discoverHideLang = discoverHideLangToggle.checked;
+      try { localStorage.setItem("jobtrail_discover_hide_lang", discoverHideLang ? "1" : "0"); } catch (_) { /* ignore */ }
+      renderDiscoverResults();
     });
   }
   const savedSearchesEl = $("saved-searches");

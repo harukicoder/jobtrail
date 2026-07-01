@@ -11,17 +11,34 @@ export const SEED_COMPANIES = {
     "pinterest", "reddit", "affirm", "instacart", "twilio", "asana", "lyft",
     "gitlab", "robinhood", "coinbase", "postman", "sofi", "grafanalabs", "gusto",
     "faire", "monzo", "twitch", "discord", "dropbox", "gocardless", "squarespace",
-    "circleci"
+    "circleci", "anthropic", "remotecom", "adyen", "elastic", "clickhouse", "figma",
+    "workato", "intercom", "fivetran", "dialpad", "vercel", "hightouch", "newrelic",
+    "mercury", "vonage", "checkr", "amplitude", "fastly", "pendo", "tailscale",
+    "mixpanel", "airtable", "launchdarkly", "marqeta", "cockroachlabs", "webflow",
+    "gemini", "yugabyte", "alloy", "calendly", "starburst", "cultureamp",
+    "planetscale", "lithic", "lattice", "stackblitz", "consensys", "dremio", "netlify"
   ],
-  lever: ["veeva", "palantir", "mistral", "matchgroup", "ro"],
-  ashby: ["openai", "notion", "ramp", "cursor", "supabase", "watershed", "linear", "posthog", "mintlify"]
+  lever: [
+    "veeva", "palantir", "mistral", "matchgroup", "ro", "spotify", "gopuff",
+    "aircall", "secureframe", "angellist", "porter", "neon", "finch"
+  ],
+  ashby: [
+    "openai", "notion", "ramp", "cursor", "supabase", "watershed", "linear",
+    "posthog", "mintlify", "snowflake", "cohere", "plaid", "vanta", "replit",
+    "kong", "clickup", "drata", "temporal", "confluent", "sentry", "miro", "modal",
+    "gainsight", "poshmark", "persona", "render", "merge", "alchemy", "leapsome",
+    "column", "oyster", "gorgias", "airbyte", "coder", "uniswap", "unit", "railway",
+    "moderntreasury", "kustomer", "doppler", "paragon"
+  ]
 };
 
 // Pretty display names where simple title-casing the token looks wrong.
 const NAME_OVERRIDES = {
   openai: "OpenAI", gitlab: "GitLab", posthog: "PostHog", gocardless: "GoCardless",
   mongodb: "MongoDB", sofi: "SoFi", circleci: "CircleCI", matchgroup: "Match Group",
-  grafanalabs: "Grafana Labs", veeva: "Veeva", ro: "Ro"
+  grafanalabs: "Grafana Labs", veeva: "Veeva", ro: "Ro", clickup: "ClickUp",
+  moderntreasury: "Modern Treasury", angellist: "AngelList", remotecom: "Remote",
+  cultureamp: "Culture Amp"
 };
 
 const UA = { "user-agent": "JobTrail/1.0 (+https://jobtrail.cv)", accept: "application/json" };

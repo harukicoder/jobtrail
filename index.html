@@ -76,7 +76,9 @@
 
       <nav class="view-tabs" id="view-tabs" hidden>
         <button type="button" class="view-tab is-active" data-view="pipeline">Pipeline</button>
+        <button type="button" class="view-tab" data-view="picks">Today's picks</button>
         <button type="button" class="view-tab" data-view="discover">Discover<span class="tab-dot" id="discover-dot" hidden></span></button>
+        <button type="button" class="view-tab" data-view="companies">Companies</button>
         <button type="button" class="view-tab" data-view="funnel">Funnel analytics</button>
         <button type="button" class="view-tab" data-view="analytics" id="analytics-tab" hidden>Site analytics</button>
       </nav>
@@ -126,14 +128,13 @@
         <p class="analytics-status" id="analytics-status"></p>
       </section>
 
-      <section class="discover-section" id="discover-section" hidden>
+      <section class="discover-section" id="picks-section" hidden>
         <div class="discover-head">
           <div>
-            <h2>Discover remote jobs</h2>
-            <p class="funnel-sub">Live remote roles aggregated from job boards (Remotive, RemoteOK, Jobicy, We Work Remotely) plus employer boards on Greenhouse, Lever &amp; Ashby. We flag which ones are open to your region so you don't chase region-locked listings.</p>
+            <h2>Today's picks</h2>
+            <p class="funnel-sub">A fresh daily batch of remote roles matched to you — region-eligible and above your salary floor, employer boards and best-fit first.</p>
           </div>
         </div>
-
         <div class="daily-picks" id="daily-picks-wrap">
           <div class="daily-head">
             <h3>Today's picks <span class="daily-count" id="daily-count"></span></h3>
@@ -153,9 +154,15 @@
           </div>
           <div class="discover-grid" id="daily-grid"></div>
         </div>
+      </section>
 
-        <div class="discover-divider"><span>Or search all remote jobs</span></div>
-
+      <section class="discover-section" id="discover-section" hidden>
+        <div class="discover-head">
+          <div>
+            <h2>Discover remote jobs</h2>
+            <p class="funnel-sub">Search live remote roles aggregated from job boards (Remotive, RemoteOK, Jobicy, We Work Remotely) plus employer boards on Greenhouse, Lever &amp; Ashby.</p>
+          </div>
+        </div>
         <form class="discover-controls" id="discover-form">
           <input type="search" id="discover-search" placeholder="Search role, skill, keyword… (e.g. product manager)">
           <select id="discover-category" aria-label="Category">
@@ -178,19 +185,34 @@
           <button class="ghost-button" id="discover-save-btn" type="button" title="Save this search to revisit and get new-match alerts">★ Save search</button>
         </form>
         <div class="saved-searches" id="saved-searches" hidden></div>
+        <div class="daily-controls" id="discover-controls-row" hidden>
+          <label class="daily-ctl">Sort
+            <select id="discover-sort">
+              <option value="best">Best match</option>
+              <option value="fit">Highest fit %</option>
+              <option value="new">Newest</option>
+            </select>
+          </label>
+          <input type="search" id="discover-loc" class="daily-loc" placeholder="Filter by location… (e.g. UK)">
+          <label class="hide-rejected-toggle" title="Hide roles that require a language you don't speak"><input type="checkbox" id="discover-hide-lang"> Hide other-language roles</label>
+        </div>
         <p class="discover-status" id="discover-status">Search above, or pick a saved search, to see live remote roles.</p>
         <div class="discover-grid" id="discover-grid"></div>
+      </section>
 
-        <div class="discover-divider"><span>Follow companies</span></div>
-        <div class="follow-companies" id="follow-companies">
-          <p class="funnel-sub">Follow a company's careers board (Greenhouse, Lever or Ashby) and its new remote roles are pulled into your picks. Companies whose jobs you Track are followed automatically.</p>
-          <form class="follow-form" id="follow-form">
-            <input type="search" id="follow-input" placeholder="Company name or handle (e.g. spotify)">
-            <button class="ghost-button" id="follow-btn" type="submit">Follow</button>
-          </form>
-          <p class="follow-status" id="follow-status"></p>
-          <div class="followed-list" id="followed-list"></div>
+      <section class="discover-section" id="companies-section" hidden>
+        <div class="discover-head">
+          <div>
+            <h2>Follow companies</h2>
+            <p class="funnel-sub">Follow a company's careers board (Greenhouse, Lever or Ashby) and its new remote roles are pulled into Today's picks. Companies whose jobs you Track are followed automatically.</p>
+          </div>
         </div>
+        <form class="follow-form" id="follow-form">
+          <input type="search" id="follow-input" placeholder="Company name or handle (e.g. spotify)">
+          <button class="primary-button" id="follow-btn" type="submit">Follow</button>
+        </form>
+        <p class="follow-status" id="follow-status"></p>
+        <div class="followed-list" id="followed-list"></div>
       </section>
 
       <section class="funnel-section" id="funnel-section" hidden>

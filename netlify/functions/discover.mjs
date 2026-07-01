@@ -11,7 +11,7 @@ import { getStore } from "@netlify/blobs";
 
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 min — fresh enough, polite to sources.
 const PER_SOURCE = 40;               // cap per board before merging
-const MERGED_MAX = 300;              // hard cap on the returned list (daily picks pull a big pool then filter/rank down)
+const MERGED_MAX = 700;              // hard cap on the returned list (daily picks pull a big pool then filter/rank down)
 const FETCH_TIMEOUT_MS = 9000;
 
 const UA = { "user-agent": "JobTrail/1.0 (+https://jobtrail.cv)", accept: "application/json" };

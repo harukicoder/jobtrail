@@ -20,7 +20,7 @@ export default async (req) => {
   }
 
   const companies = await loadCompanyList();
-  const jobs = await crawlCompanies(companies, { concurrency: 16 });
+  const jobs = await crawlCompanies(companies, { concurrency: 20 });
   // Only persist a non-empty crawl, so a transient network blip can't wipe the
   // cache and leave Discover without ATS roles.
   if (jobs.length) {
