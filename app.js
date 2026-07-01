@@ -532,6 +532,83 @@
     return "weak";
   }
 
+  // Employer ATS boards (apply directly on the company's careers page) tend to
+  // be higher-signal than aggregator job boards — flag + rank them accordingly.
+  function isDirectSource(rj) {
+    return /^(Greenhouse|Lever|Ashby)$/i.test(String(rj && rj.source || ""));
+  }
+
+  // ---- Language requirements ---------------------------------------------
+  // Flag roles that require a language: French/Spanish are a plus (the user
+  // speaks them), English is baseline, anything else is a blocker. Also
+  // separate hard "required" from soft "recommended".
+  const KNOWN_LANGS = ["english", "french", "spanish"]; // languages the user speaks
+  const LANGUAGES = [
+    ["English", /\benglish\b/i],
+    ["French", /\bfrench\b|\bfran[çc]ais\b/i],
+    ["Spanish", /\bspanish\b|\bespa[ñn]ol\b/i],
+    ["German", /\bgerman\b|\bdeutsch\b/i],
+    ["Italian", /\bitalian\b|\bitaliano\b/i],
+    ["Dutch", /\bdutch\b|\bnederlands\b/i],
+    ["Portuguese", /\bportuguese\b|\bportugu[êe]s\b/i],
+    ["Mandarin", /\bmandarin\b|\bchinese\b/i],
+    ["Japanese", /\bjapanese\b/i],
+    ["Korean", /\bkorean\b/i],
+    ["Arabic", /\barabic\b/i],
+    ["Russian", /\brussian\b/i],
+    ["Polish", /\bpolish\b/i],
+    ["Swedish", /\bswedish\b/i],
+    ["Norwegian", /\bnorwegian\b/i],
+    ["Danish", /\bdanish\b/i],
+    ["Finnish", /\bfinnish\b/i],
+    ["Turkish", /\bturkish\b/i],
+    ["Hebrew", /\bhebrew\b/i],
+    ["Ukrainian", /\bukrainian\b/i]
+  ];
+  const LANG_REQUIRED_RE = /\b(required|require|fluent|fluency|native|must|proficien\w*|mandatory|essential|bilingual|c1|c2|business[- ]?level|professional working)\b/i;
+  const LANG_RECOMMENDED_RE = /\b(prefer\w*|plus|bonus|advantage\w*|nice to have|desirable|beneficial|ideally|would be|good to have|appreciated|is a plus|a plus)\b/i;
+
+  function detectLanguageNeeds(text) {
+    const hay = String(text || "");
+    if (!hay) return null;
+    const known = new Set(KNOWN_LANGS);
+    const out = { requiredKnown: [], requiredOther: [], recommended: [] };
+    const seen = new Set();
+    // Split into short clauses so a "required"/"a plus" keyword binds to the
+    // language in the SAME clause, not a neighbouring one (e.g.
+    // "Spanish required; Portuguese is a plus").
+    hay.split(/[;.,\n•|()/]+/).forEach((clause) => {
+      const required = LANG_REQUIRED_RE.test(clause);
+      const recommended = LANG_RECOMMENDED_RE.test(clause);
+      if (!required && !recommended) return;
+      LANGUAGES.forEach(([label, re]) => {
+        if (seen.has(label) || !re.test(clause)) return;
+        seen.add(label);
+        const key = label.toLowerCase();
+        if (recommended && !required) { if (key !== "english") out.recommended.push(label); return; }
+        if (key === "english") return; // baseline — everyone needs it, not worth flagging
+        if (known.has(key)) out.requiredKnown.push(label);
+        else out.requiredOther.push(label);
+      });
+    });
+    return (out.requiredKnown.length || out.requiredOther.length || out.recommended.length) ? out : null;
+  }
+
+  function languageBadgesHtml(lang) {
+    if (!lang) return "";
+    let html = "";
+    lang.requiredOther.forEach((l) => {
+      html += `<span class="lang-badge lang-blocker" title="This role requires ${escapeHtml(l)} — not one of your languages">⚠ Requires ${escapeHtml(l)}</span>`;
+    });
+    lang.requiredKnown.forEach((l) => {
+      html += `<span class="lang-badge lang-good" title="Requires ${escapeHtml(l)} — one of your languages">🗣 ${escapeHtml(l)} required ✓</span>`;
+    });
+    lang.recommended.forEach((l) => {
+      html += `<span class="lang-badge lang-rec" title="${escapeHtml(l)} is recommended, not required">${escapeHtml(l)} a plus</span>`;
+    });
+    return html;
+  }
+
   async function setJobStatusInline(id, newStatus) {
     const job = state.jobs.find((j) => j.id === id);
     if (!job || job.status === newStatus) return;
@@ -1014,8 +1091,10 @@
       : `<button class="primary-button" data-action="track-discover" data-id="${escapeHtml(rj.id)}">+ Track</button>`;
     const published = rj.publishedAt ? formatRelative(rj.publishedAt) : "";
     const postedAbs = rj.publishedAt ? absoluteDate(rj.publishedAt) : "";
+    const direct = isDirectSource(rj);
+    const langBadges = languageBadgesHtml(rj._lang);
     return `
-      <article class="disc-card" data-elig="${elig.eligibility}">
+      <article class="disc-card${direct ? " disc-card-direct" : ""}" data-elig="${elig.eligibility}">
         <div class="disc-card-head">
           <div class="disc-card-title">
             <strong>${escapeHtml(decodeEntities(rj.title) || "(untitled)")}</strong>
@@ -1023,13 +1102,14 @@
           </div>
           ${badge}
         </div>
+        ${langBadges ? `<div class="disc-langs">${langBadges}</div>` : ""}
         <div class="disc-meta">
           ${typeof rj._fit === "number" ? `<span class="disc-fit" style="--fit-color:${fitScoreColor(rj._fit)}" title="Keyword match to your CV — a quick estimate, not a full AI analysis">${rj._fit}% fit</span>` : ""}
           <span title="Accepted location">📍 ${escapeHtml(loc)}</span>
           ${rj.jobType ? `<span>• ${escapeHtml(String(rj.jobType).replace(/_/g, " "))}</span>` : ""}
           ${rj.salary ? `<span class="disc-salary">• 💷 ${escapeHtml(rj.salary)}</span>` : ""}
           ${published ? `<span title="Posted ${escapeHtml(postedAbs)}">• Posted ${escapeHtml(published)}</span>` : ""}
-          ${rj.source ? `<span class="disc-source" title="Source board">${escapeHtml(rj.source)}</span>` : ""}
+          ${rj.source ? `<span class="disc-source${direct ? " disc-source-direct" : ""}" title="${direct ? "Direct from the employer's careers page" : "Via a job-board aggregator"}">${direct ? "◆ " : ""}${escapeHtml(rj.source)}</span>` : ""}
         </div>
         <div class="disc-actions">
           <a class="ghost-button" href="${escapeHtml(rj.url)}" target="_blank" rel="noopener noreferrer">View posting ↗</a>
@@ -1109,7 +1189,10 @@
     discoverLoadedOnce = true;
     try {
       discoverResults = await fetchDiscover(q);
-      discoverResults.forEach((rj) => { rj._fit = quickFitScore(rj); });
+      discoverResults.forEach((rj) => {
+        rj._fit = quickFitScore(rj);
+        rj._lang = detectLanguageNeeds((rj.title || "") + " " + (rj.description || ""));
+      });
       // If this came from / matches a saved search, mark its current results seen.
       markSavedSearchSeen(q, discoverResults);
       renderDiscoverResults();
@@ -1274,7 +1357,7 @@
   // is identical from your side: the first time you open the app on a new
   // calendar day, we fetch a fresh batch, filter it, and cache it for the day.
   const DAILY_PICKS_KEY = "jobtrail_daily_picks";
-  const DAILY_TARGET = 35;
+  const DAILY_TARGET = 65;
   const SALARY_FLOOR_GBP = 25000;
   let dailyPicks = [];
 
@@ -1326,6 +1409,11 @@
     if (elig.eligibility === "eligible") s += 30;
     else if (elig.eligibility === "unknown") s += 10;
     if (typeof rj._fit === "number") s += rj._fit * 0.6; // fit dominates ordering (up to +60)
+    if (isDirectSource(rj)) s += 14; // employer boards are higher-signal
+    if (rj._lang) {
+      if (rj._lang.requiredOther.length) s -= 30; // needs a language the user lacks → sink it
+      if (rj._lang.requiredKnown.length) s += 8;  // needs French/Spanish → a plus for them
+    }
     if (parseAnnualGbp(rj.salary) != null) s += 12;
     const ts = new Date(rj.publishedAt).getTime();
     if (!isNaN(ts)) s += Math.max(0, 15 - ((Date.now() - ts) / 86400000) * 3);
@@ -1361,8 +1449,11 @@
     if (status) status.textContent = "Fetching today's remote picks…";
     try {
       // Pull the latest broad batch, then filter + rank down to the target.
-      const jobs = await fetchDiscover({ limit: 100 });
-      jobs.forEach((rj) => { rj._fit = quickFitScore(rj); });
+      const jobs = await fetchDiscover({ limit: 300 });
+      jobs.forEach((rj) => {
+        rj._fit = quickFitScore(rj);
+        rj._lang = detectLanguageNeeds((rj.title || "") + " " + (rj.description || ""));
+      });
       dailyPicks = jobs.filter(passesDailyFilter)
         .sort((a, b) => pickScore(b) - pickScore(a))
         .slice(0, DAILY_TARGET);
